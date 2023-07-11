@@ -93,7 +93,7 @@ class SEVIRStoreRoot:
                 p_bar.update()
 
 
-def main(types: list[SEVIRImageType], wrk_dir: str) -> None:
+def main(types: list[SEVIRImageType], wrk_dir: str, nproc: int) -> None:
     cat = SEVIRCatalog(
         os.path.join(wrk_dir, "CATALOG.csv"),
         prefix=os.path.join(wrk_dir, "data"),
@@ -102,11 +102,12 @@ def main(types: list[SEVIRImageType], wrk_dir: str) -> None:
     df = cat.to_pandas().loc[ixs[:, types], :]
     df[TIME_UTC] = df[TIME_UTC].dt.strftime("%Y-%m-%d %H:%M:%S")
     root = SEVIRStoreRoot(os.path.join(wrk_dir, "zarr.array"), types)
-    root.batch_update(df.reset_index().to_dict("records"))
+    root.batch_update(df.reset_index().to_dict("records"), processes=nproc)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--types", type=SEVIRImageType, nargs="+", default=[member for member in SEVIRImageType])
     parser.add_argument("wrk_dir", type=str, help="path to the directory containing the SEVIR dataset")
+    parser.add_argument("--nproc", type=int, default=4, help="number of processes to use for parallel loading")
     main(**vars(parser.parse_args()))
