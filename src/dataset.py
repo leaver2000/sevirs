@@ -1,113 +1,239 @@
 from __future__ import annotations
 
-import argparse
-import multiprocessing.pool
+import logging
 import os
+import random
 import typing
+from typing import Iterable, Iterator, Sequence
 
-import h5py
 import numpy as np
 import pandas as pd
+import torch
 import tqdm
-import zarr
-from numpy.typing import NDArray
+from torch import Tensor
+from torch.utils.data import DataLoader, IterableDataset, Sampler
 
-from .catalog import SEVIRCatalog
+from .catalog import Catalog
 from .constants import (
-    DEFAULT_FRAME_TIMES,
-    FILE_NAME,
     ID,
     IMG_TYPE,
-    LIGHTNING,
-    TIME_UTC,
-    SEVIRImageType,
+    IR_069,
+    IR_107,
+    VERTICALLY_INTEGRATED_LIQUID,
+    ImageType,
 )
+from .h5 import FileReader
 
-ixs = pd.IndexSlice
-Metadata: typing.TypeAlias = dict[typing.Hashable, typing.Any]
+logging.getLogger().setLevel(logging.INFO)
 
-
-def reshape_lightning_data(data: np.ndarray, t_slice=slice(0, None)) -> NDArray[np.int16]:
-    """Converts Nx5 lightning data matrix into a 2D grid of pixel counts."""
-
-    out_size = (48, 48, len(DEFAULT_FRAME_TIMES)) if t_slice.stop is None else (48, 48, 1)
-    if data.shape[0] == 0:
-        return np.zeros((1,) + out_size, dtype=np.int16)
-
-    # filter out points outside the grid
-    x, y = data[:, 3], data[:, 4]
-    m = np.logical_and.reduce([x >= 0, x < out_size[0], y >= 0, y < out_size[1]])
-    data = data[m, :]
-    if data.shape[0] == 0:
-        return np.zeros((1,) + out_size, dtype=np.int16)
-
-    # Filter/separate times
-    t = data[:, 0]
-    if t_slice.stop is not None:  # select only one time bin
-        if t_slice.stop > 0:
-            if t_slice.stop < len(DEFAULT_FRAME_TIMES):
-                tm = np.logical_and(t >= DEFAULT_FRAME_TIMES[t_slice.stop - 1], t < DEFAULT_FRAME_TIMES[t_slice.stop])
-            else:
-                tm = t >= DEFAULT_FRAME_TIMES[-1]
-        else:  # special case:  frame 0 uses lght from frame 1
-            tm = np.logical_and(t >= DEFAULT_FRAME_TIMES[0], t < DEFAULT_FRAME_TIMES[1])
-
-        data = data[tm, :]
-        z = np.zeros(data.shape[0], dtype=np.int64)
-    else:  # compute z coordinate based on bin location times
-        z = np.digitize(t, DEFAULT_FRAME_TIMES) - 1
-        z[z == -1] = 0  # special case:  frame 0 uses lght from frame 1
-
-    x = data[:, 3].astype(np.int64)
-    y = data[:, 4].astype(np.int64)
-
-    k = np.ravel_multi_index([y, x, z], out_size)
-    n = np.bincount(k, minlength=np.prod(out_size))
-    return np.reshape(n, out_size).astype(np.int16)[np.newaxis, :]
+idx = pd.IndexSlice
 
 
-class SEVIRStoreRoot:
-    __slots__ = ("store", "root", "groups")
+class SEVIRGenerator(IterableDataset[tuple[Tensor, Tensor]]):
+    __slots__ = ("reader", "img_ids", "x_img_types", "y_img_types", "x", "y")
+    if typing.TYPE_CHECKING:
+        reader: FileReader
+        img_ids: list[str]
+        x_img_types: set[ImageType]
+        y_img_types: set[ImageType]
+        x: Catalog
+        y: Catalog
 
-    def __init__(self, path: str, types: list[SEVIRImageType]) -> None:
-        self.store = store = zarr.DirectoryStore(path)
-        self.root = root = zarr.group(store=store, overwrite=True)
-        self.groups = {stype: root.create_group(stype) for stype in types}
+    def __init__(
+        self,
+        sevir: Catalog | str,
+        *,
+        inputs: set[ImageType],
+        features: set[ImageType],
+        validate: bool = True,
+        catalog: str | None = None,
+        data_dir: str | None = None,
+        nproc: int | None = os.cpu_count(),
+    ) -> None:
+        super().__init__()
+        self.meta = meta = (
+            sevir
+            if isinstance(sevir, Catalog)
+            else Catalog(sevir, catalog=catalog, data_dir=data_dir, img_types=inputs | features)
+        )
 
-    def update(self, stype: SEVIRImageType, img_id: str, data: NDArray, metadata: Metadata) -> SEVIRStoreRoot:
-        self.groups[stype].array(img_id, data)
-        self.groups[stype].attrs[img_id] = metadata
+        self.x, self.y = x, y = meta.split_by_types(list(inputs), list(features))
+
+        if validate:
+            meta.validate()
+            assert (
+                len(meta.get_level_values(ID).unique())
+                == len(x.get_level_values(ID).unique())
+                == len(y.get_level_values(ID).unique())
+            )
+            assert (meta.img_types) == (inputs | features) == (x.img_types | y.img_types)
+
+        self.reader = reader = FileReader(meta, nproc=nproc)
+        self.img_ids = list(reader.index.get_level_values(ID).unique())
+
+    @typing.overload
+    def get_batch(
+        self, n: int, img_id: str | int | None = ..., metadata: typing.Literal[False] = ...
+    ) -> tuple[Tensor, Tensor]:
+        ...
+
+    @typing.overload
+    def get_batch(
+        self, n: int, img_id: str | int | None = ..., metadata: typing.Literal[True] = ...
+    ) -> tuple[tuple[Tensor, Tensor], pd.DataFrame]:
+        ...
+
+    def get_batch(
+        self, n: int, img_id: str | int | None = None, metadata: bool = False
+    ) -> tuple[Tensor, Tensor] | tuple[tuple[Tensor, Tensor], pd.DataFrame]:
+        if img_id is None:
+            img_id = random.choice(self.img_ids)
+        elif isinstance(img_id, int):
+            img_id = self.img_ids[img_id]
+
+        # access reader with -> [(id, im_t), (file_index, l, w, t)] -> ndarray[img_type, l, w, t]
+        x = np.array(
+            [
+                self.reader[idx[img_id, img_type], idx[self.x.file_index.loc[(img_id, img_type)], :, :, :]]
+                for img_type in self.x.img_types
+            ]
+        )
+        y = np.array([self.reader[idx[img_id, img_type], idx[n, :, :, :]] for img_type in self.y.img_types])
+        values = torch.from_numpy(x), torch.from_numpy(y)
+        if not metadata:
+            return values
+        return (values, self.meta[[img_id]])
+
+    def close(self) -> None:
+        logging.info("Closing SEVIRReaderHDF5")
+        self.reader.close_all()
+
+    def __getitem__(self, index: int) -> tuple[Tensor, Tensor]:
+        return self.get_batch(index)
+
+    def __iter__(self) -> Iterator[tuple[Tensor, Tensor]]:
+        try:
+            for img_id in self.img_ids:
+                n = self.reader.n_event[img_id]
+                logging.info(f"Loading {n} frames for event {img_id}")
+                bar = tqdm.tqdm(total=n)
+                for i in range(n):
+                    yield self.get_batch(i, img_id)
+                    bar.update(1)
+        except KeyboardInterrupt:
+            logging.info("KeyboardInterrupt")
+            self.close()
+            raise StopIteration
+
+    def __enter__(self) -> typing.Generator[SEVIRGenerator, None, None]:
+        try:
+            yield self
+        except KeyboardInterrupt:
+            logging.info("KeyboardInterrupt")
+            self.close()
+        finally:
+            self.close()
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()
+
+    def __repr__(self) -> str:
+        first, last = self.reader.index.get_level_values(ID).unique()[0:-1]
+        ids = f"[{first!r}, ..., {last!r}]"
+
+        shape = self.reader.shapes
+        img_types = self.reader.index.get_level_values(IMG_TYPE).unique().tolist()
+
+        n, l, w, t = shape.min()
+
+        return f"{self.__class__.__name__}[idx[{ids}, {img_types!r}], [0:{n}, 0:{l}, 0:{w}, 0:{t}]]"
+
+
+class SEVIRLoader(DataLoader[tuple[Tensor, Tensor]]):
+    if typing.TYPE_CHECKING:
+        dataset: SEVIRGenerator
+
+    def __init__(
+        self,
+        dataset: SEVIRGenerator,
+        batch_size: int | None = 1,
+        shuffle: bool | None = None,
+        sampler: Sampler | Iterable | None = None,
+        batch_sampler: Sampler[Sequence] | Iterable[Sequence] | None = None,
+        num_workers: int = 0,
+        collate_fn: typing.Callable[[list[tuple[Tensor, Tensor]]], typing.Any] | None = None,
+        pin_memory: bool = False,
+        drop_last: bool = False,
+        timeout: float = 0,
+        worker_init_fn: typing.Callable[[int], None] | None = None,
+        multiprocessing_context=None,
+        generator=None,
+        *,
+        prefetch_factor: int | None = None,
+        persistent_workers: bool = False,
+        pin_memory_device: str = "",
+    ):
+        super().__init__(
+            dataset,
+            batch_size,
+            shuffle,
+            sampler,
+            batch_sampler,
+            num_workers,
+            collate_fn,
+            pin_memory,
+            drop_last,
+            timeout,
+            worker_init_fn,
+            multiprocessing_context,
+            generator,
+            prefetch_factor=prefetch_factor,
+            persistent_workers=persistent_workers,
+            pin_memory_device=pin_memory_device,
+        )
+
+    def __enter__(self) -> SEVIRLoader:
         return self
 
-    def h5_loader(self, metadata: Metadata) -> None:
-        stype, sid = (metadata[IMG_TYPE], metadata[ID])
-
-        with h5py.File(metadata[FILE_NAME], "r") as f:
-            arr = np.array(f[stype]) if stype != LIGHTNING else reshape_lightning_data(f[sid][:])  # type: ignore
-        self.update(stype, sid, arr, metadata)
-
-    def batch_update(self, records: list[Metadata], processes: int = 4) -> None:
-        p_bar = tqdm.tqdm(total=len(records))
-        with multiprocessing.pool.Pool(processes=processes) as pool:
-            for _ in pool.imap_unordered(self.h5_loader, records):
-                p_bar.update()
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.dataset.close()
 
 
-def main(types: list[SEVIRImageType], wrk_dir: str, nproc: int) -> None:
-    cat = SEVIRCatalog(
-        os.path.join(wrk_dir, "CATALOG.csv"),
-        prefix=os.path.join(wrk_dir, "data"),
+def main(
+    sevir="/mnt/nuc/c/sevir",
+    data_dir: str = "data",
+    catalog: str = "CATALOG.csv",
+    inputs={IR_069, IR_107},
+    features={VERTICALLY_INTEGRATED_LIQUID},
+    validate: bool = True,
+) -> None:
+    generator = SEVIRGenerator(
+        sevir,
+        catalog=catalog,
+        data_dir=data_dir,
+        #
+        inputs=inputs,
+        features=features,
+        validate=validate,
     )
-    cat.validate_paths()
-    df = cat.to_pandas().loc[ixs[:, types], :]
-    df[TIME_UTC] = df[TIME_UTC].dt.strftime("%Y-%m-%d %H:%M:%S")
-    root = SEVIRStoreRoot(os.path.join(wrk_dir, "zarr.array"), types)
-    root.batch_update(df.reset_index().to_dict("records"), processes=nproc)
+    # x = generator.reader._store._index.dropna().reset_index().to_numpy()[:5, :3]
+    # print(x, generator.reader._store[x])
+
+    for (x,), s in generator.reader.groupby([ID]):
+        print(x, s, sep="\n")
+        break
+    # print(
+    #     generator.reader.pick(generator.reader.index[0]),
+    #     generator.reader.select(generator.reader.index[0:5]),
+    # )
+    # for x, y in generator:
+    #     print(x.shape, y.shape)
+    # #     break
+    # # for x, y in SEVIRLoader(generator, batch_size=15, num_workers=0):
+    #     print(x.shape, y.shape)
+    #     break
+    generator.close()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--types", type=SEVIRImageType, nargs="+", default=[member for member in SEVIRImageType])
-    parser.add_argument("wrk_dir", type=str, help="path to the directory containing the SEVIR dataset")
-    parser.add_argument("--nproc", type=int, default=4, help="number of processes to use for parallel loading")
-    main(**vars(parser.parse_args()))
+    main()

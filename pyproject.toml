@@ -1,8 +1,9 @@
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 warn_unused_configs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
+enable_incomplete_feature = "TypeVarTuple"
 
 [tool.black]
 target-version = ['py310']
