@@ -79,11 +79,11 @@ class SEVIRStoreRoot:
     def __init__(self, path: str, types: list[ImageType]) -> None:
         self.store = store = zarr.DirectoryStore(path)
         self.root = root = zarr.group(store=store, overwrite=True)
-        self.groups = {stype: root.create_group(stype) for stype in types}
+        self.groups = {img_t: root.create_group(img_t) for img_t in types}
 
-    def update(self, stype: ImageType, img_id: str, data: NDArray, metadata: Metadata) -> SEVIRStoreRoot:
-        self.groups[stype].array(img_id, data)
-        self.groups[stype].attrs[img_id] = metadata
+    def update(self, img_t: ImageType, img_id: str, data: NDArray, metadata: Metadata) -> SEVIRStoreRoot:
+        self.groups[img_t].array(img_id, data)
+        self.groups[img_t].attrs[img_id] = metadata
         return self
 
     def h5_loader(self, metadata: Metadata) -> None:
@@ -114,6 +114,7 @@ def main(*, img_types: list[ImageType], wrk_dir: str, nproc: int) -> None:
     df[TIME_UTC] = df[TIME_UTC].dt.strftime("%Y-%m-%d %H:%M:%S")
     root = SEVIRStoreRoot(os.path.join(wrk_dir, "zarr.array"), img_types)
     root.batch_update(df.reset_index().to_dict("records"), processes=nproc)
+    return 0
 
 
 if __name__ == "__main__":

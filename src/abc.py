@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing
+import abc
 from numpy.typing import NDArray
 import pandas as pd
 import numpy as np
@@ -18,64 +19,32 @@ KeyStore: typing.TypeAlias = """(
 )"""
 
 
-class StoreIterator(typing.Mapping[KeyType, ValueType]):
-    @typing.overload
-    def __init__(
-        self,
-        data: typing.Mapping[KeyType, ValueType],
-        in_to: None = ...,
-    ) -> None:
-        ...
+def is_key(key) -> typing.TypeGuard[KeyType]:
+    return isinstance(key, typing.Hashable)
 
-    @typing.overload
-    def __init__(
-        self,
-        data: typing.Mapping[KeyType, typing.Any],
-        in_to: typing.Callable[..., ValueType] = ...,  # type: ignore[assignment]
-    ) -> None:
-        ...
 
-    def __init__(
-        self,
-        data: typing.Mapping[KeyType, ValueType | typing.Any],
-        in_to: typing.Callable[..., ValueType] | None = None,
-    ) -> None:
-        # print(typing.get_type_hints(in_to), in_to, typing.get_args(in_to))
+class MultiIndexMapping(typing.Mapping[KeyType, ValueType], abc.ABC):
+    _data: typing.Mapping[KeyType, ValueType]
 
-        # def resolve_into():
-        #     args = typing.get_args(in_to)
-        #     if not args:
-        #         return in_to
-
-        #     def inner(arg, value: typing.Any) -> ValueType:
-        #         return arg(value)
-        #     return
-
-        if data is not None:
-            data = {k: in_to(v) for k, v in data.items()}
+    def __init__(self, data: typing.Mapping[KeyType, ValueType]) -> None:
         self._data = data
 
     @typing.overload
+    @abc.abstractmethod
     def __getitem__(self, __key: KeyType) -> ValueType:
         ...
 
     @typing.overload
+    @abc.abstractmethod
     def __getitem__(self, __key: KeyStore[KeyType]) -> typing.Iterator[ValueType]:
         ...
 
+    @abc.abstractmethod
     def __getitem__(self, __key: KeyType | KeyStore[KeyType]) -> typing.Iterator[ValueType] | ValueType:
-        if isinstance(__key, typing.Hashable):
-            return self._data[__key]
-        return iter(self._data[k] for k in __key)  # type: ignore[return-value]
-
-    def __iter__(self) -> typing.Iterator[KeyType]:
-        return iter(self._data)
-
-    def __len__(self) -> int:
-        return len(self._data)
+        ...
 
     def to_dict(self, keys: KeyStore[KeyType] | None = None) -> dict[KeyType, ValueType]:
-        return dict(self[keys] if keys else self._data)
+        return dict(zip(keys, self[keys]) if keys is not None else self._data)  # type: ignore
 
     def to_series(self, keys: KeyStore[KeyType] | None = None, name: str | None = None) -> pd.Series[ValueType]:
         return pd.Series(self.to_dict(keys), name=name)
@@ -83,15 +52,56 @@ class StoreIterator(typing.Mapping[KeyType, ValueType]):
     def to_frame(self, keys: KeyStore[KeyType] | None = None, index: list | None = None, dtype=None) -> pd.DataFrame:
         return pd.DataFrame(self.to_dict(keys), index=index, dtype=dtype)
 
-    def to_numpy(self, keys: KeyStore[KeyType] | None = None, dtype=None) -> NDArray[ValueType]:
+    def to_numpy(self, keys: KeyStore[KeyType] | None = None) -> NDArray[ValueType]:
         if keys is None:
             return np.array(list(self._data.values()))
-        return np.array([self[k] for k in keys])
+        return np.array(self[keys])
+
+
+class StoreIterator(MultiIndexMapping[KeyType, ValueType]):
+    def __iter__(self) -> typing.Iterator[KeyType]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    if typing.TYPE_CHECKING:
+
+        @typing.overload
+        def __getitem__(self, __key: KeyType) -> ValueType:
+            ...
+
+        @typing.overload
+        def __getitem__(self, __key: KeyStore[KeyType]) -> typing.Iterator[ValueType]:
+            ...
+
+    def __getitem__(self, __key: KeyType | KeyStore[KeyType]) -> typing.Iterator[ValueType] | ValueType:
+        if is_key(__key):
+            return self._data[__key]
+        if isinstance(__key, typing.Iterable):
+            return iter(self._data[k] for k in __key)
+
+        raise KeyError(__key)
 
 
 def main():
-    assert StoreIterator({"A": "1"}, in_to=int).to_dict() == {"A": 1}  # StoreIterator[str, int]
-    StoreIterator({"A": ["1"]}, in_to=list[int]).to_dict() == {"A": [1]}  # StoreIterator[str, list[int]]
+    assert StoreIterator({"A": "1"}).to_dict() == {"A": "1"}  # StoreIterator[str, int]
+    assert StoreIterator({"A": ["1"]}).to_dict() == {"A": ["1"]}  # StoreIterator[str, list[int]]
+    s = StoreIterator({"A": ["1"], "B": ["1"], "C": ["1"]})
+    assert s.to_dict(["A", "B"]) == {"A": ["1"], "B": ["1"]}
+    assert np.all(s.to_numpy() == np.array([["1"], ["1"], ["1"]]))
+
+    x = s["A"]
+    size = 90 * 49 * 49 * 49
+    s = StoreIterator(
+        {
+            "vis": np.arange(size).reshape(90, 49, 49, 49),
+            "vil": np.arange(size).reshape(90, 49, 49, 49),
+            "ir_069": np.arange(size).reshape(90, 49, 49, 49),
+            "ir_109": np.arange(size).reshape(90, 49, 49, 49),
+        }
+    )
+    print(np.array([a[1:2, :, :, 1:2] for a in s[["vis", "vil"]]]))
 
 
 if __name__ == "__main__":

@@ -17,6 +17,9 @@ __all__ = [
 import sys
 import typing
 
+AnyT = typing.TypeVar("AnyT", bound=typing.Any)
+KeyT = typing.TypeVar("KeyT", bound=typing.Hashable)
+ValueT = typing.TypeVar("ValueT")
 if typing.TYPE_CHECKING:
     if sys.version_info >= (3, 11):
         from typing import Self

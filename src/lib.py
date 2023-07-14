@@ -5,7 +5,11 @@ __all__ = ["SEVIRBase", "html", "sel"]
 import typing
 
 import pandas as pd
-import xarray as xr
+
+try:
+    import xarray as xr
+except ImportError:
+    xr = None
 
 from ._typing import LocIndexerType, NDArray, Self
 

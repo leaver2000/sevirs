@@ -1,11 +1,21 @@
 {
     "cSpell.words": [
         "astype",
+        "bincount",
+        "coodinate",
         "dtype",
         "dtypes",
+        "iloc",
         "isin",
         "lght",
+        "locaiton",
+        "ndarray",
+        "newaxis",
+        "nlwt",
         "notna",
-        "SEVIR"
+        "nproc",
+        "nunique",
+        "SEVIR",
+        "tqdm"
     ]
 }

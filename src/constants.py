@@ -7,7 +7,7 @@ import typing
 
 import numpy as np
 from numpy.typing import DTypeLike
-from typing_extensions import Self
+from ._typing import Self
 
 _ROOT_DIR = os.path.abspath(os.path.dirname(os.path.abspath(__file__)))
 PATH_TO_SEVIR = os.getenv("PATH_TO_SEVIR", _ROOT_DIR)
