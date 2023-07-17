@@ -5,9 +5,11 @@ import os
 import typing
 
 import pandas as pd
+import xarray as xr
 from pandas._libs.missing import NAType
 
-from ._typing import ColumnIndexerType
+from ._typing import ColumnIndexerType, LocIndexerType, Self
+from numpy.typing import NDArray
 from .constants import (
     CATALOG_BOUNDING_BOX,
     CATALOG_DTYPES,
@@ -28,20 +30,28 @@ from .constants import (
     ImageType,
     ImageTypeSet,
 )
-from .lib import SEVIRBase, sel
+
+sel = pd.IndexSlice
+P = typing.ParamSpec("P")
 
 
-def set_and_sort_index(func: typing.Callable[..., pd.DataFrame]):
+def html(obj: typing.Any) -> str:
+    if not hasattr(obj, "_repr_html_"):
+        return repr(obj)
+    return obj._repr_html_()
+
+
+def set_and_sort_index(func: typing.Callable[P, pd.DataFrame]) -> typing.Callable[P, pd.DataFrame]:
     index_names = [ID, IMG_TYPE]
 
     @functools.wraps(func)
-    def decorator(*args, **kwargs) -> pd.DataFrame:
+    def decorator(*args: P.args, **kwargs: P.kwargs) -> pd.DataFrame:
         df = func(*args, **kwargs)
 
         return (
             df
             if df.index.names == index_names
-            else df.set_index(index_names, drop=True, append=False).sort_index(axis=0, level=ID)
+            else df.set_index(index_names, drop=True, append=False).sort_index(axis=0, level=ID, inplace=False)
         )
 
     return decorator
@@ -54,7 +64,6 @@ def read(
     *,
     img_types: ImageTypeSet | None = None,
     drop: list[str] = [PROJ, HEIGHT_M, WIDTH_M],
-    # use_numeric_index: bool = False,
 ) -> pd.DataFrame:
     """
     if no image types are specified the img_types are not filtered so there will be storm ids that dont have all of
@@ -83,11 +92,12 @@ def subset_by_image_types(df: pd.DataFrame | Catalog, img_types: ImageTypeSet) -
     # create a mask to filter out the IDs that dont have all of the image types
     mask = df.groupby(ID)[IMG_TYPE].size() >= len(img_types)
     # the mask is a different shape because of the groupby, so we need to use the index to filter the dataframe
-    df = df.loc[mask.index[mask], :].reset_index(drop=False)
-    return df.set_index([ID, IMG_TYPE], drop=True, append=False).sort_index(axis=0, level=ID)
+    return df.loc[mask.index[mask], :].reset_index(drop=False)
+    # return df.set_index([ID, IMG_TYPE], drop=True, append=False).sort_index(axis=0, level=ID)
 
 
 def resolve(left: str | None, right: str | None = None) -> str:
+    """resolve two strings to a single path.  If both are provided, they are joined."""
     if left is not None and right is not None:
         out = os.path.join(left, right)
         assert os.path.exists(out), f"Path does not exist: {out}"
@@ -102,7 +112,7 @@ def resolve(left: str | None, right: str | None = None) -> str:
     raise ValueError("There is no path to resolve")
 
 
-class Catalog(SEVIRBase[pd.MultiIndex]):
+class Catalog:
     """This implementation of the SEVIR Catalog uses a MultiIndex to allow for grouping and slicing events by the
     event_index and image_type.  The __getitem__ method of the catalog is slightly different than than a typical pandas
     DataFrame as it prioritizes the index over the columns.
@@ -160,12 +170,20 @@ class Catalog(SEVIRBase[pd.MultiIndex]):
     ```
     """
 
+    # ==========================================================================
+    # Constructors
+    def _manager(self, df: pd.DataFrame, inplace: bool) -> Self:
+        if inplace:
+            self._data = df
+            return self
+        return self.__class__(df)
+
     def __init__(
         self,
         __value: Catalog | pd.DataFrame | str = PATH_TO_SEVIR,
         *,
-        catalog: str | None = DEFAULT_CATALOG,
-        data_dir: str | None = DEFAULT_DATA,
+        catalog: str = DEFAULT_CATALOG,
+        data_dir: str = DEFAULT_DATA,
         img_types: ImageTypeSet = DEFAULT_IMAGE_TYPES,
         validate: bool = False,
     ) -> None:
@@ -174,7 +192,6 @@ class Catalog(SEVIRBase[pd.MultiIndex]):
             if catalog or data_dir:
                 prefix = resolve(__value, data_dir)
                 df[FILE_NAME] = df[FILE_NAME].map(lambda s: os.path.join(prefix, s)).astype("string")
-
         elif isinstance(__value, Catalog):
             df = __value.to_pandas()
         elif isinstance(__value, pd.DataFrame):
@@ -182,9 +199,28 @@ class Catalog(SEVIRBase[pd.MultiIndex]):
         else:
             raise TypeError(f"catalog must be Catalog, pd.DataFrame, or str, not {type(__value)}")
 
-        super().__init__(df)
+        self._data = df
+
         if validate:
             self.validate()
+
+    # =================================================================================================================
+    # Properties
+    @property
+    def columns(self) -> pd.Index:
+        return self._data.columns
+
+    @property
+    def index(self) -> pd.MultiIndex:
+        return self._data.index  # type: ignore
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        return self._data.shape
+
+    @property
+    def dtypes(self) -> pd.Series[str]:
+        return self._data.dtypes
 
     @property
     def img_types(self) -> set[ImageType]:
@@ -210,6 +246,40 @@ class Catalog(SEVIRBase[pd.MultiIndex]):
     def file_index(self) -> pd.Series[int]:
         return self._data[FILE_INDEX]
 
+    # =================================================================================================================
+    def __getitem__(self, idx: LocIndexerType[typing.Any]) -> pd.DataFrame:
+        """I generic getitem method that returns the pandas DataFrame"""
+        # because the index is a multi index the type checker does not understand that a single
+        # integer will still return a pandas DataFrame and not a Series
+        obj = self._data.loc.__getitem__(idx)
+        return obj.to_frame() if isinstance(obj, pd.Series) else obj
+
+    def __repr__(self) -> str:
+        return repr(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def _repr_html_(self) -> str:
+        return html(self._data)
+
+    # =================================================================================================================
+    def to_pandas(self, columns: list[str] | pd.Index | pd.MultiIndex | None = None) -> pd.DataFrame:
+        """copy the data to a pandas DataFrame to that the original object is not modified."""
+        df = self._data.copy()
+        if columns is not None:
+            df = df[columns]
+        return df
+
+    def to_xarray(self, columns) -> xr.Dataset:
+        return xr.Dataset.from_dataframe(self.to_pandas(columns))
+
+    def to_numpy(self, columns) -> NDArray:
+        return self.to_pandas(columns).to_numpy()
+
+    def get_level_values(self, level: str | int) -> pd.Index:
+        return self._data.index.get_level_values(level)
+
     def validate(self) -> Catalog:
         if self._data.empty:
             raise ValueError("Catalog is empty.")
@@ -224,7 +294,7 @@ class Catalog(SEVIRBase[pd.MultiIndex]):
         df = self[sel[:, img_types], columns]
         return self._manager(df, inplace)
 
-    def get_by_event(self, event: EventType, inplace=False) -> Catalog:
+    def get_by_event(self, event: EventType, inplace: bool = False) -> Catalog:
         df = self[self.event_type == event, :]
         return self._manager(df, inplace)
 
@@ -238,7 +308,7 @@ class Catalog(SEVIRBase[pd.MultiIndex]):
         return self.get_by_img_type(x), self.get_by_img_type(y)
 
 
-def main1() -> None:
+def main() -> None:
     cat = Catalog(
         # by default with no arguments the catalog will be read from the default location
     )
@@ -251,7 +321,7 @@ def main1() -> None:
         [ImageType.IR_069, ImageType.VISIBLE, ImageType.IR_107],
         [ImageType.VERTICALLY_INTEGRATED_LIQUID, ImageType.LIGHTNING],
     )
-    # print(x, y, sep="\n")
+    print(x, y, sep="\n")
 
     # validate all the paths
     assert cat is cat.validate()
@@ -259,29 +329,7 @@ def main1() -> None:
     assert cat is cat.get_by_event("Tornado", inplace=True)
     assert cat is not cat.get_by_event("Tornado", inplace=False)
     cat.to_pandas()
-    # df["file_name"] = df.file_name.str.removeprefix("/mnt/nuc/c/sevir/data/")
-    # x = cat.file_name.str.removeprefix("/mnt/nuc/c/sevir/data/")
-
-    # fname = "/mnt/nuc/c/sevir/data/ir069/2019/SEVIR_IR069_STORMEVENTS_2019_0701_1231.h5"
-    # df = df.loc[df.file_name == fname]
-    # with h5py.File(fname, "r") as f:
-    #     ds = f["ir069"][df.file_index[0], :, :, :]
-    #     print(ds)
-    # print(
-    #     df.loc[df.file_name == fname],
-    #     # x[x.duplicated()].loc[("S858186", "ir069")],
-    #     cat[cat.file_name == "ir069/2019/SEVIR_IR069_STORMEVENTS_2019_0701_1231.h5"],
-    #     cat.get_by_event("Tornado").file_name.count(),
-    #     #     cat.get_by_event("Tornado", inplace=True) is cat,
-    # )
-
-
-def main() -> None:
-    cat = Catalog(
-        # img_types={ImageType.IR_107, ImageType.IR_069},
-    )
-    print(cat)
 
 
 if __name__ == "__main__":
-    main1()
+    main()

@@ -28,6 +28,7 @@ class Enum(enum.Enum):
 
 
 # =====================================================================================================================
+# SEVIR Image Types
 class ImageType(str, Enum):
     VISIBLE = "vis"
     IR_069 = "ir069"
@@ -36,7 +37,7 @@ class ImageType(str, Enum):
     LIGHTNING = "lght"
 
     def get_dtype(self) -> DTypeLike:
-        return SEVIR_DTYPES[self]
+        return _IMAGE_DTYPES[self]
 
     def get_cmap(self) -> typing.Any:
         raise NotImplementedError
@@ -58,14 +59,14 @@ VISIBLE, IR_069, IR_107, VERTICALLY_INTEGRATED_LIQUID, LIGHTNING = (
     ImageType.LIGHTNING,
 )
 
-# =====================================================================================================================
-SEVIR_DTYPES: dict[ImageType, DTypeLike] = {
+_IMAGE_DTYPES: dict[ImageType, DTypeLike] = {
     VERTICALLY_INTEGRATED_LIQUID: np.uint8,
     VISIBLE: np.int16,
     IR_069: np.int16,
     IR_107: np.int16,
     LIGHTNING: np.int16,
 }
+# =====================================================================================================================
 
 
 CATALOG_COLUMNS = (

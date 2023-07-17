@@ -13,7 +13,7 @@ from numpy.typing import NDArray
 from pandas.core.groupby.generic import SeriesGroupBy
 from typing_extensions import TypeVarTuple, Unpack
 
-from ._typing import AnyT, N, Nd, Scalar
+from ._typing import AnyT, N, Nd, Scalar, Array
 from .abc import MappedDataset
 from .catalog import Catalog
 from .constants import DEFAULT_FRAME_TIMES as FRAME_TIMES
@@ -31,12 +31,12 @@ from .constants import (
 
 
 def reshape_lightning_data(
-    data: np.ndarray[Nd[N, typing.Literal[5]], AnyT],  # NumpyArray[Nd[N, typing.Literal[5]]],
+    data: Array[Nd[N, typing.Literal[5]], AnyT],  # NumpyArray[Nd[N, typing.Literal[5]]],
     *,
     time_slice=slice(0, None),
     img_size: int = 48,
     dtype: type[AnyT] = np.int16,
-) -> np.ndarray[Nd[N, N, N], AnyT]:
+) -> Array[Nd[N, N, N], AnyT]:
     """Converts Nx5 lightning data matrix into a 2D grid of pixel counts
 
     >>> CONST_SIZE = 5
@@ -55,7 +55,7 @@ def reshape_lightning_data(
     shape = n_length, n_width, _ = (img_size, img_size, len(FRAME_TIMES) if time_slice.stop is None else 1)
 
     if data.shape[0] == 0:  # there are no samples
-        return np.zeros(shape, dtype=dtype)  # type: ignore
+        return np.zeros(shape, dtype=dtype)
 
     # filter out points outside the grid
     x, y = data[:, FLASH_X], data[:, FLASH_Y]
@@ -66,7 +66,7 @@ def reshape_lightning_data(
     t = data[:, FLASH_TIME]
     # Filter/separate times
     if time_slice.stop is None:  # select only one time bin
-        z = np.digitize(t, FRAME_TIMES) - 1
+        z = np.digitize(t, FRAME_TIMES) - 1.0
         z[z == -1] = 0  # special case:  frame 0 uses lght from frame 1
     else:  # compute z coordinate based on bin location times
         if time_slice.stop >= 0:  # special case:  frame 0 uses lght from frame 1
@@ -79,9 +79,8 @@ def reshape_lightning_data(
 
         z = np.zeros(data.shape[0], dtype=np.int64)
     x, y = data[:, FLASH_X].astype(np.int64), data[:, FLASH_Y].astype(np.int64)
-    # x, y = data[:, RASTER_X].astype(np.int64), data[:, RASTER_Y].astype(np.int64)
-    lwt = np.ravel_multi_index([y, x, z], dims=shape)
-    return np.bincount(lwt, minlength=np.prod(shape)).reshape(shape).astype(dtype)  # type: ignore
+    lwt = np.ravel_multi_index([y, x, z], dims=shape)  # type: ignore
+    return np.bincount(lwt, minlength=np.prod(shape)).reshape(shape).astype(dtype)
 
 
 class H5File(h5py.File, typing.Generic[AnyT]):
@@ -111,7 +110,7 @@ class H5File(h5py.File, typing.Generic[AnyT]):
     def event_ids(self) -> NDArray[np.bytes_]:
         return self[ID][...]
 
-    def get_by_event_id(self, __id: bytes | str, /) -> np.ndarray[Nd[N, N, N, N], np.dtype[np.int16]]:
+    def get_by_event_id(self, __id: bytes | str, /) -> Array[Nd[N, N, N, N], np.int16]:
         img_t = self._img_type
         arr = (
             reshape_lightning_data(self[__id][...], dtype=np.int16)
@@ -120,10 +119,10 @@ class H5File(h5py.File, typing.Generic[AnyT]):
         )
         return arr[np.newaxis, ...]  # type: ignore
 
-    def get_by_file_index(self, index: int) -> np.ndarray[Nd[N, N, N, N], np.dtype[np.int16]]:
+    def get_by_file_index(self, index: int) -> Array[Nd[N, N, N, N], np.int16]:
         return self.get_by_event_id(self.event_ids[index])
 
-    def get_by(self, by: bytes | str | NDArray[np.bytes_]) -> np.ndarray[Nd[N, N, N, N], np.dtype[np.int16]]:
+    def get_by(self, by: bytes | str | NDArray[np.bytes_]) -> Array[Nd[N, N, N, N], np.int16]:
         ...
 
 

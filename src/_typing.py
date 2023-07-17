@@ -6,10 +6,10 @@ from typing import (
     Annotated,
     Any,
     Callable,
-    Concatenate,
     NewType,
     ParamSpec,
     SupportsIndex,
+    Sequence,
     TypeAlias,
     TypeVar,
 )
@@ -23,23 +23,34 @@ import typing
 
 import numpy as np
 import pandas as pd
-from numpy.typing import NBitBase
 from pandas._typing import HashableT, Scalar
 
+
 # =====================================================================================================================
-# TypeVariables and ParamSpecs
-P = ParamSpec("P")
+
+
 Ts = TypeVarTuple("Ts")
 AnyT = TypeVar("AnyT", bound=typing.Any)
 KeyT = TypeVar("KeyT", bound=typing.Hashable)
 ValueT = TypeVar("ValueT")
 ScalarT = TypeVar("ScalarT", bound=Scalar)
+
+
 # =====================================================================================================================
 # New Types
 N = NewType(":", int)
-N_T = TypeVar("N_T", bound=N)
 Nd = Annotated[tuple[Unpack[Ts]], "number of dimensions"]
-NdT = TypeVar("NdT", bound=typing.Sequence)
+_NdT = TypeVar("_NdT", contravariant=True)
+Array: TypeAlias = "np.ndarray[Nd[_NdT], np.dtype[AnyT]]"
+"""
+>>> from typing_extensions import reveal_type
+>>> import numpy as np
+>>> from sevir._typing import Array, Nd, N
+>>> a: Array[Nd[N, N], np.int64] = np.array([[1, 2], [3, 4]])
+>>> reveal_type(a)
+Runtime type is 'ndarray'
+"""
+
 
 # =====================================================================================================================
 if typing.TYPE_CHECKING:
@@ -68,10 +79,3 @@ LocIndexerType: TypeAlias = """(
     ]
 )"""
 ImageIndexerType: TypeAlias = "slice | int | SupportsIndex"
-# Concatenate[tuple[Unpack[Ts]], P],
-from numpy.typing import NDArray
-
-NumpyArray: TypeAlias = np.ndarray[Ts, np.dtype[AnyT]]  # type: ignore NDArray[tuple[Unpack[Ts]], P],
-
-
-# np.dtype[AnyT],
