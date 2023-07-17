@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 import multiprocessing.pool
-import os
 import typing
+from typing import Any
 
 import h5py
 import numpy as np
@@ -11,10 +11,9 @@ import pandas as pd
 import tqdm
 from numpy.typing import NDArray
 from pandas.core.groupby.generic import SeriesGroupBy
-from typing_extensions import TypeVarTuple, Unpack
+from torch.utils.data import Dataset
 
-from ._typing import AnyT, N, Nd, Scalar, Array
-from .abc import MappedDataset
+from ._typing import AnyT, Array, N, Nd
 from .catalog import Catalog
 from .constants import DEFAULT_FRAME_TIMES as FRAME_TIMES
 from .constants import (
@@ -83,59 +82,45 @@ def reshape_lightning_data(
     return np.bincount(lwt, minlength=np.prod(shape)).reshape(shape).astype(dtype)
 
 
-class H5File(h5py.File, typing.Generic[AnyT]):
+class H5File(h5py.File, typing.Mapping[str | bytes, typing.Mapping[Any, np.ndarray]]):
     """subclass of h5py.File that provides a few convenience methods for SEVIR files and __reduce__ to allow
     for pickling which is required for multiprocessing."""
 
-    __slots__ = ("_img_type", "_metadata")
+    __slots__ = ("_img_type",)
     if typing.TYPE_CHECKING:
         _img_type: ImageType
-        _metadata: AnyT | None
-        __getitem__: typing.Callable[[str | bytes], h5py.Dataset]
 
-    def __init__(self, filename: str, img_type: str | None = None, *, metadata: AnyT = None) -> None:
+    def __init__(self, filename: str, img_type: str) -> None:
         super().__init__(filename, mode="r")
         self._img_type = ImageType(img_type)
-        self._metadata = metadata
 
     @property
     def img_type(self) -> ImageType:
         return self._img_type
 
     @property
-    def metadata(self) -> AnyT:
-        return self._metadata  # type: ignore
-
-    @property
     def event_ids(self) -> NDArray[np.bytes_]:
-        return self[ID][...]
+        return super().__getitem__(ID)[...]
 
     def get_by_event_id(self, __id: bytes | str, /) -> Array[Nd[N, N, N, N], np.int16]:
         img_t = self._img_type
         arr = (
-            reshape_lightning_data(self[__id][...], dtype=np.int16)
+            reshape_lightning_data(super().__getitem__(__id)[...], dtype=np.int16)
             if img_t == LIGHTNING
-            else self[img_t][self[ID] == __id]
+            else super().__getitem__(__id)[self.event_ids == __id]
         )
+
         return arr[np.newaxis, ...]  # type: ignore
 
     def get_by_file_index(self, index: int) -> Array[Nd[N, N, N, N], np.int16]:
         return self.get_by_event_id(self.event_ids[index])
 
-    def get_by(self, by: bytes | str | NDArray[np.bytes_]) -> Array[Nd[N, N, N, N], np.int16]:
-        ...
 
-
-Ts = TypeVarTuple("Ts", default=Unpack[tuple[Scalar, ...]])
-
-H5_STORE = "h5_store"
-
-
-class H5Store:
-    __slots__ = ("_index", "_files", "_bar")
+class H5Store(Dataset[list[Array[Nd[N, N, N, N], np.int16]]]):
+    __slots__ = ("_index", "_data", "_bar")
     if typing.TYPE_CHECKING:
         _index: pd.Series[int]
-        _files: list[H5File[pd.DataFrame]]
+        _data: list[H5File]
         _bar: tqdm.tqdm
 
     def __init__(self, catalog: Catalog, nproc: int | None = 1) -> None:
@@ -146,59 +131,40 @@ class H5Store:
         if not set(df.columns).issuperset(required_cols):
             raise ValueError(f"Catalog is missing columns: {required_cols}")
 
-        self._index = pd.Series(index=pd.MultiIndex.from_frame(df[index_cols]), name=H5_STORE, dtype="Int64")
-        self._files = []
+        self._index = pd.Series(index=pd.MultiIndex.from_frame(df[index_cols]), name="data_index", dtype="Int64")
+        self._data = []
         self._bar = tqdm.tqdm(total=df.file_name.nunique())
 
         logging.info("Opening HDF5 files")
-        pool_ = False
-        # if pool_:
         with multiprocessing.pool.ThreadPool(nproc) as pool:
             pool.starmap(
                 self._load_file_series, df[[FILE_NAME, ID, IMG_TYPE, FILE_INDEX]].groupby(by=[FILE_NAME, IMG_TYPE])
             )
 
-    def _load_file_series(self, fn_im_t: tuple[str, str], df: pd.DataFrame) -> None:
-        fn, im_t = fn_im_t
-        self._index[df[[ID, IMG_TYPE, FILE_INDEX]].to_numpy()] = len(self._files)
-        self._files.append(fn)  # H5File(fn, im_t))
+    def _load_file_series(self, file_nt: tuple[str, str], df: pd.DataFrame) -> None:
+        self._index.loc[df[[ID, IMG_TYPE, FILE_INDEX]].to_numpy()] = len(self._data)
+        # H5File(*file_nt)
+        self._data.append(file_nt)  # type: ignore
         self._bar.update(1)
 
     # =========================================================================
     #
     def __len__(self) -> int:
-        return len(self._files)
+        return len(self._data)
 
-    def get_by(self, s: pd.Series):
-        return {}
-        ...
+    def __getitem__(self, __id: str | bytes) -> list[Array[Nd[N, N, N, N], np.int16]]:
+        arr = typing.cast(
+            typing.Sequence[tuple[int, int]],
+            self._index[__id].reset_index()[["data_index", FILE_INDEX]].to_numpy(),  # type: ignore
+        )
+        print([f"self._data[{__id!r}].get_by_event_id({di!r})[{fi}:, :, :, :]" for di, fi in arr])
+        # return [self._data[di].get_by_event_id(id_)[fi:, :, :, :] for di, fi in arr]
+        return [self._data[i] for i, _ in arr]
 
-    def __getitem__(self, __id: str):
-        # [id, img_type, file_index]
-        # print(self._index[__id, :, :].reset_index().itertuples())
-        return [
-            (self._files[row[H5_STORE]], row)
-            for row in self._index[__id, :, :].reset_index().to_dict(orient="records")
-        ]
-
-    # def groupby(
-    #     self, by: list[typing.Literal["id", "img_type", "file_index"]]
-    # ) -> SeriesGroupBy[int, tuple[str | int, ...]]:
-    #     return self._index.groupby(by=by)
-
-    # def select(
-    #     self, key: typing.Iterable[tuple[str, str, int]], time: int | slice = slice(None)
-    # ) -> list[NDArray[np.floating[typing.Any]]]:
-    #     return [self.pick(key, time=time) for key in key]
-
-    # def pick(self, key: tuple[str, str, int], *, time: int | slice = slice(None)) -> NDArray[np.floating[typing.Any]]:
-    #     img_type, img_type, file_index = key
-    #     idx = self.loc[key]
-    #     h5 = self._store[idx]
-    #     return h5
-
-    # def get_file(self, key: tuple[str, str, int]) -> H5File[pd.DataFrame]:
-    #     return self._store[self.loc[key]]
+    def groupby(
+        self, by: list[typing.Literal["id", "img_type", "file_index"]]
+    ) -> SeriesGroupBy[int, tuple[str | int, ...]]:
+        return self._index.groupby(by=by)
 
 
 def main() -> None:

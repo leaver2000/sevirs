@@ -6,10 +6,10 @@ import typing
 
 import pandas as pd
 import xarray as xr
+from numpy.typing import NDArray
 from pandas._libs.missing import NAType
 
 from ._typing import ColumnIndexerType, LocIndexerType, Self
-from numpy.typing import NDArray
 from .constants import (
     CATALOG_BOUNDING_BOX,
     CATALOG_DTYPES,

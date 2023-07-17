@@ -35,6 +35,8 @@ __all__ = [
     "Catalog",
     "SEVIRGenerator",
     "SEVIRLoader",
+    "H5File",
+    "H5Store",
     "catalog",
     "dataset",
     "constants",
@@ -78,3 +80,4 @@ from .constants import (
 )
 from .constants import ImageType as ImageType
 from .dataset import SEVIRGenerator, SEVIRLoader
+from .h5 import H5File, H5Store

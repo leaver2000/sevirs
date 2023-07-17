@@ -68,7 +68,7 @@ class SEVIRGenerator(IterableDataset[tuple[Tensor, Tensor]]):
             )
             assert (meta.img_types) == (inputs | features) == (x.img_types | y.img_types)
 
-        self.reader = reader = FileReader(meta, nproc=nproc)
+        self.reader = reader = H5Store(meta, nproc=nproc)
         self.img_ids = list(reader.index.get_level_values(ID).unique())
 
     @typing.overload

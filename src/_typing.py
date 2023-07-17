@@ -8,8 +8,8 @@ from typing import (
     Callable,
     NewType,
     ParamSpec,
-    SupportsIndex,
     Sequence,
+    SupportsIndex,
     TypeAlias,
     TypeVar,
 )
@@ -25,10 +25,7 @@ import numpy as np
 import pandas as pd
 from pandas._typing import HashableT, Scalar
 
-
 # =====================================================================================================================
-
-
 Ts = TypeVarTuple("Ts")
 AnyT = TypeVar("AnyT", bound=typing.Any)
 KeyT = TypeVar("KeyT", bound=typing.Hashable)
@@ -37,11 +34,20 @@ ScalarT = TypeVar("ScalarT", bound=Scalar)
 
 
 # =====================================================================================================================
-# New Types
-N = NewType(":", int)
-Nd = Annotated[tuple[Unpack[Ts]], "number of dimensions"]
-_NdT = TypeVar("_NdT", contravariant=True)
-Array: TypeAlias = "np.ndarray[Nd[_NdT], np.dtype[AnyT]]"
+class Nd(tuple[Unpack[Ts]]):
+    """type alias for a tuple of ints or slices
+    >>> import numpy as np
+    >>> from sevir._typing import Nd
+    >>> a: np.ndarray[Nd[2, 2], np.int64] = np.array([[1, 2], [3, 4]])
+    """
+
+    # def
+
+
+_NdT = TypeVar("_NdT", bound=Nd, contravariant=True)
+N = typing.NewType(":", int)  # type: ignore
+
+Array: TypeAlias = np.ndarray[_NdT, np.dtype[AnyT]]
 """
 >>> from typing_extensions import reveal_type
 >>> import numpy as np
