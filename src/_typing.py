@@ -13,6 +13,7 @@ from typing import (
     TypeAlias,
     TypeVar,
 )
+import enum
 
 if sys.version_info < (3, 11):
     from typing_extensions import Self, TypeVarTuple, Unpack
@@ -44,9 +45,8 @@ class Nd(tuple[Unpack[Ts]]):
     # def
 
 
+N = enum.Enum(":", {"_": slice(None)})
 _NdT = TypeVar("_NdT", bound=Nd, contravariant=True)
-N = typing.NewType(":", int)  # type: ignore
-
 Array: TypeAlias = np.ndarray[_NdT, np.dtype[AnyT]]
 """
 >>> from typing_extensions import reveal_type

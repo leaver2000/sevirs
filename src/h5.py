@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import multiprocessing.pool
 import typing
-from typing import Any
 
 import h5py
 import numpy as np
@@ -35,7 +34,7 @@ def reshape_lightning_data(
     time_slice=slice(0, None),
     img_size: int = 48,
     dtype: type[AnyT] = np.int16,
-) -> Array[Nd[N, N, N], AnyT]:
+) -> Array[Nd[N, N, N, N], AnyT]:
     """Converts Nx5 lightning data matrix into a 2D grid of pixel counts
 
     >>> CONST_SIZE = 5
@@ -79,10 +78,10 @@ def reshape_lightning_data(
         z = np.zeros(data.shape[0], dtype=np.int64)
     x, y = data[:, FLASH_X].astype(np.int64), data[:, FLASH_Y].astype(np.int64)
     lwt = np.ravel_multi_index([y, x, z], dims=shape)  # type: ignore
-    return np.bincount(lwt, minlength=np.prod(shape)).reshape(shape).astype(dtype)
+    return np.bincount(lwt, minlength=np.prod(shape)).reshape((1,) + shape).astype(dtype)
 
 
-class H5File(h5py.File, typing.Mapping[str | bytes, typing.Mapping[Any, np.ndarray]]):
+class H5File(h5py.File, Dataset[Array[Nd[N, N, N, N], np.int16]]):
     """subclass of h5py.File that provides a few convenience methods for SEVIR files and __reduce__ to allow
     for pickling which is required for multiprocessing."""
 
@@ -102,18 +101,20 @@ class H5File(h5py.File, typing.Mapping[str | bytes, typing.Mapping[Any, np.ndarr
     def event_ids(self) -> NDArray[np.bytes_]:
         return super().__getitem__(ID)[...]
 
-    def get_by_event_id(self, __id: bytes | str, /) -> Array[Nd[N, N, N, N], np.int16]:
+    def __getitem__(self, __id: bytes | str, /) -> Array[Nd[N, N, N, N], np.int16]:
         img_t = self._img_type
-        arr = (
+
+        return typing.cast(
+            Array[Nd[N, N, N, N], np.int16],
             reshape_lightning_data(super().__getitem__(__id)[...], dtype=np.int16)
             if img_t == LIGHTNING
-            else super().__getitem__(__id)[self.event_ids == __id]
+            else super().__getitem__(img_t)[self.event_ids == __id],
         )
 
-        return arr[np.newaxis, ...]  # type: ignore
+        # return arr
 
     def get_by_file_index(self, index: int) -> Array[Nd[N, N, N, N], np.int16]:
-        return self.get_by_event_id(self.event_ids[index])
+        return self[self.event_ids[index]]
 
 
 class H5Store(Dataset[list[Array[Nd[N, N, N, N], np.int16]]]):
