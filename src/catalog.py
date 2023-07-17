@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import functools
 import os
+import typing
 
 import pandas as pd
 from pandas._libs.missing import NAType
@@ -27,8 +29,6 @@ from .constants import (
     ImageTypeSet,
 )
 from .lib import SEVIRBase, sel
-import typing
-import functools
 
 
 def set_and_sort_index(func: typing.Callable[..., pd.DataFrame]):

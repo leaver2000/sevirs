@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 __all__ = ["SEVIRBase", "html", "sel"]
 import typing
 
@@ -10,8 +9,9 @@ try:
     import xarray as xr
 except ImportError:
     xr = None
+from numpy.typing import NDArray
 
-from ._typing import LocIndexerType, NDArray, Self
+from ._typing import LocIndexerType, Self
 
 IndexT = typing.TypeVar("IndexT", pd.Index, pd.MultiIndex)
 sel = pd.IndexSlice

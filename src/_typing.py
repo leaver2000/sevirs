@@ -1,67 +1,77 @@
 # flake8: noqa
 from __future__ import annotations
 
-__all__ = [
-    "Self",
-    # numpy types
-    "NDArray",
-    "DTypeLike",
-    # pandas types
-    "NAType",
-    "NDArray",
-    "ColumnIndexerType",
-    "LocIndexerType",
-    "IndexType",
-    "MaskType",
-]
 import sys
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    Concatenate,
+    NewType,
+    ParamSpec,
+    SupportsIndex,
+    TypeAlias,
+    TypeVar,
+)
+
+if sys.version_info < (3, 11):
+    from typing_extensions import Self, TypeVarTuple, Unpack
+else:
+    from typing import Self, Unpack, TypeVarTuple
+
 import typing
 
-AnyT = typing.TypeVar("AnyT", bound=typing.Any)
-KeyT = typing.TypeVar("KeyT", bound=typing.Hashable)
-ValueT = typing.TypeVar("ValueT")
+import numpy as np
+import pandas as pd
+from numpy.typing import NBitBase
+from pandas._typing import HashableT, Scalar
+
+# =====================================================================================================================
+# TypeVariables and ParamSpecs
+P = ParamSpec("P")
+Ts = TypeVarTuple("Ts")
+AnyT = TypeVar("AnyT", bound=typing.Any)
+KeyT = TypeVar("KeyT", bound=typing.Hashable)
+ValueT = TypeVar("ValueT")
+ScalarT = TypeVar("ScalarT", bound=Scalar)
+# =====================================================================================================================
+# New Types
+N = NewType(":", int)
+N_T = TypeVar("N_T", bound=N)
+Nd = Annotated[tuple[Unpack[Ts]], "number of dimensions"]
+NdT = TypeVar("NdT", bound=typing.Sequence)
+
+# =====================================================================================================================
 if typing.TYPE_CHECKING:
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        try:
-            from typing_extensions import Self
-        except ImportError:
-            Self = typing.Any
-    import pandas as pd
-    from numpy.typing import DTypeLike, NDArray
-    from pandas._libs.missing import NAType
-    from pandas._typing import HashableT, IndexType, MaskType
+    from pandas._typing import IndexType, MaskType
     from pandas.core.indexing import _IndexSliceTuple
-
-    ColumnIndexerType: typing.TypeAlias = """(
-    slice
-    | HashableT
-    | IndexType
-    | MaskType
-    | typing.Callable[[pd.DataFrame], IndexType | MaskType | list[HashableT]]
-    | list[HashableT]
-    )"""
-    LocIndexerType: typing.TypeAlias = """(
-        int
-        | ColumnIndexerType[HashableT]
-        | tuple[
-            IndexType | MaskType | list[HashableT] | slice | _IndexSliceTuple | typing.Callable,
-            list[HashableT] | slice | pd.Series[bool] | typing.Callable
-        ]
-    )"""
-    ImageIndexerType: typing.TypeAlias = "slice | int | typing.SupportsIndex"
-
-
 else:
-    Self = typing.Any
-    # numpy types
-    NDArray = typing.Any
-    DTypeLike = typing.Any
-    # pandas types
-    NAType = typing.Any
-    IndexType = typing.Any
-    MaskType = typing.Any
-    ColumnIndexerType = typing.Any
-    LocIndexerType = typing.Any
-    ImageIndexerType = typing.Any
+    _IndexSliceTuple = Any
+    IndexType = Any
+    MaskType = Any
+
+
+ColumnIndexerType: TypeAlias = """(
+slice
+| HashableT
+| IndexType
+| MaskType
+| typing.Callable[[pd.DataFrame], IndexType | MaskType | list[HashableT]]
+| list[HashableT]
+)"""
+LocIndexerType: TypeAlias = """(
+    int
+    | ColumnIndexerType[HashableT]
+    | tuple[
+        IndexType | MaskType | list[HashableT] | slice | _IndexSliceTuple | Callable,
+        list[HashableT] | slice | pd.Series[bool] | Callable
+    ]
+)"""
+ImageIndexerType: TypeAlias = "slice | int | SupportsIndex"
+# Concatenate[tuple[Unpack[Ts]], P],
+from numpy.typing import NDArray
+
+NumpyArray: TypeAlias = np.ndarray[Ts, np.dtype[AnyT]]  # type: ignore NDArray[tuple[Unpack[Ts]], P],
+
+
+# np.dtype[AnyT],

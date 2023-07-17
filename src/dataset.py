@@ -22,7 +22,7 @@ from .constants import (
     VERTICALLY_INTEGRATED_LIQUID,
     ImageType,
 )
-from .h5 import FileReader
+from .h5 import H5Store
 
 logging.getLogger().setLevel(logging.INFO)
 
@@ -32,7 +32,7 @@ idx = pd.IndexSlice
 class SEVIRGenerator(IterableDataset[tuple[Tensor, Tensor]]):
     __slots__ = ("reader", "img_ids", "x_img_types", "y_img_types", "x", "y")
     if typing.TYPE_CHECKING:
-        reader: FileReader
+        reader: H5Store
         img_ids: list[str]
         x_img_types: set[ImageType]
         y_img_types: set[ImageType]

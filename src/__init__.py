@@ -39,8 +39,9 @@ __all__ = [
     "catalog",
     "dataset",
     "constants",
+    "h5",
 ]
-from . import catalog, constants, dataset
+from . import catalog, constants, dataset, h5
 from .catalog import Catalog
 from .constants import (
     CATALOG_DTYPES,
