@@ -128,143 +128,77 @@ class H5File(h5py.File, typing.Generic[AnyT]):
 
 Ts = TypeVarTuple("Ts", default=Unpack[tuple[Scalar, ...]])
 
+H5_STORE = "h5_store"
 
-class H5StoreBase(MappedDataset[tuple[Unpack[Ts]], H5File[pd.DataFrame]]):
-    """The h5py.File object does not like being inserted into a pandas DataFrame or a numpy array. This class
-    provides a wrapper around h5py.File that allows for this. It also provides a convenient way to index into
-    the file using a pandas DataFrame."""
 
-    __slots__ = ("_series", "_files", "_loc")
+class H5Store:
+    __slots__ = ("_index", "_files", "_bar")
     if typing.TYPE_CHECKING:
-        from pandas.core.series import _LocIndexerSeries
-
-        _series: pd.Series[int]
+        _index: pd.Series[int]
         _files: list[H5File[pd.DataFrame]]
-        _loc: _LocIndexerSeries[int]
+        _bar: tqdm.tqdm
 
-    def __init__(self, index: pd.MultiIndex) -> None:
-        self._series = s = pd.Series(index=index, name=self.index_name, dtype="Int64")
-        self._loc = s.loc
-        self._files = []
-
-    def __setitem__(self, key: np.ndarray, file: H5File) -> None:
-        self._series[key] = len(self._files)
-        self._files.append(file)
-
-    def __getitem__(self, index: tuple[Unpack[Ts]]) -> H5File[pd.DataFrame]:
-        """
-
-        The loader stores the Files in a dictionary with keys mapped to a (ID, ImageType) tuple.
-        >>> key = ("S728503", "vis") # (ID, ImageType)
-        >>> nlwt = pd.IndexSlice[0:1, :, :, 0] # (N, L, W, T)
-        >>> loader.dataset[key].loc[nlwt] # type: numpy.ndarray
-
-
-        All raster types in SEVIR (`vis`, `ir069`, `ir107` & `vil`) store the data 4D tensors with shapes `N x L x W x T`,
-        where `N` is the number of events in the file,  `LxL` is the image size (see patch size column in Table 1),
-        and `T` is the number of time steps in the image sequence.
-
-        >>> loader = SEVIRReaderHDF5(...)
-        >>> nlwt = pd.IndexSlice[0:1, :, :, 0] # (N, L, W, T)
-        >>> loader[("S728503", "vis"), nlwt]
-        """
-        # The series is a MultiIndex Store mapped to the file index.
-        idx = self.loc.__getitem__(index)  # type: ignore
-        return self._files.__getitem__(idx)
-
-    @property
-    def index(self) -> pd.MultiIndex:
-        return self._series.index  # type: ignore
-
-    @property
-    def index_name(self) -> str:
-        return f"<{self.__class__.__name__}.index>"
-
-    @property
-    def loc(self) -> _LocIndexerSeries[int]:
-        return self._loc
-
-    def invert_index(self) -> pd.DataFrame:
-        return self._series.reset_index(inplace=False).set_index(self.index_name, inplace=False)
-
-    def close_all(self) -> None:
-        for f in self._files:
-            f.close()
-        self._files.clear()
-        self._series = self._series.iloc[0:0]
-
-
-class H5Store(H5StoreBase[str, str, int]):
-    __slots__ = ("data",)
-
-    def __init__(self, catalog: Catalog, nproc: int | None = os.cpu_count()) -> None:
+    def __init__(self, catalog: Catalog, nproc: int | None = 1) -> None:
         # validate the catalog before attempting to open files
         index_cols = [ID, IMG_TYPE, FILE_INDEX]
         required_cols = [FILE_NAME] + index_cols  # @#[FILE_NAME, ID, IMG_TYPE, FILE_INDEX]
-        df = catalog.validate().to_pandas().reset_index(drop=False)
+        df = catalog.to_pandas().reset_index(drop=False)
         if not set(df.columns).issuperset(required_cols):
             raise ValueError(f"Catalog is missing columns: {required_cols}")
 
-        super().__init__(pd.MultiIndex.from_frame(df[index_cols]))
+        self._index = pd.Series(index=pd.MultiIndex.from_frame(df[index_cols]), name=H5_STORE, dtype="Int64")
+        self._files = []
+        self._bar = tqdm.tqdm(total=df.file_name.nunique())
 
         logging.info("Opening HDF5 files")
+        pool_ = False
+        # if pool_:
         with multiprocessing.pool.ThreadPool(nproc) as pool:
-            bar = tqdm.tqdm(total=df.file_name.nunique())
-            for file in pool.starmap(
-                lambda filename_img_t, df: H5File[pd.DataFrame](*filename_img_t, metadata=df),
-                df[[FILE_NAME, ID, IMG_TYPE, FILE_INDEX]].groupby(by=[FILE_NAME, IMG_TYPE]),
-            ):
-                self[file.metadata[index_cols].to_numpy()] = file
-                bar.update(1)
+            pool.starmap(
+                self._load_file_series, df[[FILE_NAME, ID, IMG_TYPE, FILE_INDEX]].groupby(by=[FILE_NAME, IMG_TYPE])
+            )
 
-    def __getitem__(self, index: tuple[str, str, int]) -> H5File[pd.DataFrame]:
-        """
+    def _load_file_series(self, fn_im_t: tuple[str, str], df: pd.DataFrame) -> None:
+        fn, im_t = fn_im_t
+        self._index[df[[ID, IMG_TYPE, FILE_INDEX]].to_numpy()] = len(self._files)
+        self._files.append(fn)  # H5File(fn, im_t))
+        self._bar.update(1)
 
-        The loader stores the Files in a dictionary with keys mapped to a (ID, ImageType) tuple.
-        >>> key = ("S728503", "vis") # (ID, ImageType)
-        >>> nlwt = pd.IndexSlice[0:1, :, :, 0] # (N, L, W, T)
-        >>> loader.dataset[key].loc[nlwt] # type: numpy.ndarray
+    # =========================================================================
+    #
+    def __len__(self) -> int:
+        return len(self._files)
 
+    def get_by(self, s: pd.Series):
+        return {}
+        ...
 
-        All raster types in SEVIR (`vis`, `ir069`, `ir107` & `vil`) store the data 4D tensors with shapes `N x L x W x T`,
-        where `N` is the number of events in the file,  `LxL` is the image size (see patch size column in Table 1),
-        and `T` is the number of time steps in the image sequence.
+    def __getitem__(self, __id: str):
+        # [id, img_type, file_index]
+        # print(self._index[__id, :, :].reset_index().itertuples())
+        return [
+            (self._files[row[H5_STORE]], row)
+            for row in self._index[__id, :, :].reset_index().to_dict(orient="records")
+        ]
 
-        >>> loader = SEVIRReaderHDF5(...)
-        >>> nlwt = pd.IndexSlice[0:1, :, :, 0] # (N, L, W, T)
-        >>> loader[("S728503", "vis"), nlwt]
-        """
-        # img_id, img_t, file_index = index
-        # idx = self.loc[index]
-        # print(idx)
-        # return self._files[idx]
+    # def groupby(
+    #     self, by: list[typing.Literal["id", "img_type", "file_index"]]
+    # ) -> SeriesGroupBy[int, tuple[str | int, ...]]:
+    #     return self._index.groupby(by=by)
 
-        return super().__getitem__(index)
+    # def select(
+    #     self, key: typing.Iterable[tuple[str, str, int]], time: int | slice = slice(None)
+    # ) -> list[NDArray[np.floating[typing.Any]]]:
+    #     return [self.pick(key, time=time) for key in key]
 
-    def groupby(
-        self, by: list[typing.Literal["id", "img_type", "file_index"]]
-    ) -> SeriesGroupBy[int, tuple[str | int, ...]]:
-        return self._index.groupby(by=by)
+    # def pick(self, key: tuple[str, str, int], *, time: int | slice = slice(None)) -> NDArray[np.floating[typing.Any]]:
+    #     img_type, img_type, file_index = key
+    #     idx = self.loc[key]
+    #     h5 = self._store[idx]
+    #     return h5
 
-    def select(
-        self, key: typing.Iterable[tuple[str, str, int]], time: int | slice = slice(None)
-    ) -> list[NDArray[np.floating[typing.Any]]]:
-        return [self.pick(key, time=time) for key in key]
-
-    def pick(self, key: tuple[str, str, int], *, time: int | slice = slice(None)) -> NDArray[np.floating[typing.Any]]:
-        img_type, img_type, file_index = key
-        idx = self.loc[key]
-        h5 = self._store[idx]
-        return h5
-        # return self.loc[key]
-
-        # if img_type == LIGHTNING:
-        #     return h5[file_index][:]
-
-        # return h5.data[file_index : file_index + 1, :, :, time]  # type: ignore
-
-    def get_file(self, key: tuple[str, str, int]) -> H5File[pd.DataFrame]:
-        return self._store[self.loc[key]]
+    # def get_file(self, key: tuple[str, str, int]) -> H5File[pd.DataFrame]:
+    #     return self._store[self.loc[key]]
 
 
 def main() -> None:
@@ -272,10 +206,6 @@ def main() -> None:
 
     store = H5Store(Catalog())
     print(store["R18032123577290", "ir069", 166])
-
-    # print(store.index)
-    # print(store)
-    # print(store.invert_index())
 
 
 if __name__ == "__main__":
