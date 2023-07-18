@@ -1,0 +1,121 @@
+# pyproject.toml is a new configuration file defined in PEP 518.
+# It is design to store build system requirements, but it can also store any
+# tool configuration for your Python project, possibly replacing the need for
+# setup.cfg or other tool-specific files.
+# https://github.com/carlosperate/awesome-pyproject
+[build-system]
+requires = [
+    "setuptools>=58.2.0", 
+    "wheel", 
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sevir"
+version = "0.0.1"
+requires-python = ">=3.10"
+
+[tool.setuptools]
+include-package-data = true
+#dynamic = ["dependencies", "optional-dependencies"]
+description = "Interface to SEVIR dataset"
+authors = [
+    {name = "Jason Leaver", email = "jason.leaver@us.af.mil"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Utilities",
+]
+
+[tool.setuptools.packages.find]
+where = ["sevir"]
+
+
+# [tool.setuptools.packages.find]
+# where = ["src/"]
+# [tool.setuptools.packages.find]
+# where = ["src"]  # list of folders that contain the packages (["."] by default)
+# include = ["sevir*"]  # package names should match these glob patterns (["*"] by default)
+# exclude = ["my_package.tests*"]  # exclude packages matching these glob patterns (empty by default)
+# namespaces = false  # to disable scanning PEP 420 namespaces (true by default)
+
+[tool.setuptools.package-data]
+sevir = ["py.typed"]
+
+[tool.setuptools.dynamic.dependencies]
+file = ["requirements.txt"]
+
+[tool.setuptools.dynamic.optional-dependencies]
+dev = { file = ["requirements.txt", "tests/requirements.txt"] }
+
+[tool.pytest]
+testpaths = ["tests/"]
+
+[tool.coverage.run]
+branch = true
+omit = ["src/_typing.py"]
+source = ["src/"]
+
+[tool.coverage.report]
+ignore_errors = false
+show_missing = true
+exclude_lines = [
+    # Have to re-enable the standard pragma
+    "pragma: no cover",
+    # Don't complain about missing debug-only code:s
+    # "def __repr__",
+    # "if self.debug",
+    # Don't complain if tests don't hit defensive assertion code:
+    # "raise AssertionError",
+    "raise NotImplementedError",
+    "AbstractMethodError",
+    # Don't complain if non-runnable code isn't run:
+    # "if 0:",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+enable_incomplete_feature = "TypeVarTuple,Unpack"
+
+[tool.black]
+target-version = ['py310']
+line-length = 119
+include_trailing_comma = false
+
+[tool.isort]
+profile = "black"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 119
+fix = true
+ignore = [
+    "E731",  # do not assign a lambda expression, use a def
+    "E402",  # module level import not at top of file
+    "E402",  # module level import not at top of file
+    "E501",  # line too long
+    "E741", # do not use variables named 'l', 'O', or 'I'
+]
+
+[tool.flake8]
+max-line-length = 119
+ignore = [
+    "E731",  # do not assign a lambda expression, use a def
+    "E402",  # module level import not at top of file
+    "E402",  # module level import not at top of file
+    "E501",  # line too long
+    "E741", # do not use variables named 'l', 'O', or 'I'
+]
