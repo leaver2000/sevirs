@@ -22,9 +22,9 @@ class Enum(enum.Enum):
         return cls.__members__[str(value).upper()]
 
     @classmethod
-    def map(cls, __values: typing.Iterable[typing.Any], /) -> list[Self]:
+    def map(cls, __values: typing.Iterable[typing.Any], /) -> tuple[Self]:
         """class method to map values to enum members"""
-        return [cls(value) for value in ([__values] if isinstance(__values, (str, Enum)) else __values)]
+        return tuple(cls(value) for value in ((__values,) if isinstance(__values, (str, Enum)) else __values))
 
 
 # =====================================================================================================================
@@ -49,7 +49,7 @@ class ImageType(str, Enum):
 ImageTypeValue = typing.Literal["vis", "ir069", "ir107", "vil", "lght"]
 ImageTypeLike: typing.TypeAlias = "ImageType | ImageTypeValue"
 ImageTypeSet: typing.TypeAlias = "set[ImageType] | set[ImageTypeValue] | set[ImageTypeLike]"
-DEFAULT_IMAGE_TYPES = set(ImageType)
+DEFAULT_IMAGE_TYPES = tuple(ImageType)
 
 VISIBLE, IR_069, IR_107, VERTICALLY_INTEGRATED_LIQUID, LIGHTNING = (
     ImageType.VISIBLE,

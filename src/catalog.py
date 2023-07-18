@@ -24,6 +24,7 @@ from .constants import (
     IMG_TYPE,
     PATH_TO_SEVIR,
     PROJ,
+    ImageTypeValue,
     TIME_UTC,
     WIDTH_M,
     EventType,
@@ -62,7 +63,7 @@ def read(
     __src: str,
     /,
     *,
-    img_types: ImageTypeSet | None = None,
+    img_types: tuple[ImageType, ...] | None = None,
     drop: list[str] = [PROJ, HEIGHT_M, WIDTH_M],
 ) -> pd.DataFrame:
     """
@@ -80,7 +81,7 @@ def read(
 
 
 @set_and_sort_index
-def subset_by_image_types(df: pd.DataFrame | Catalog, img_types: ImageTypeSet) -> pd.DataFrame:
+def subset_by_image_types(df: pd.DataFrame | Catalog, img_types: tuple[ImageType, ...]) -> pd.DataFrame:
     """Subset the catalog to only include the image types specified in img_types"""
     if isinstance(df, Catalog):
         df = df.to_pandas()
@@ -184,11 +185,13 @@ class Catalog:
         *,
         catalog: str = DEFAULT_CATALOG,
         data_dir: str = DEFAULT_DATA,
-        img_types: ImageTypeSet = DEFAULT_IMAGE_TYPES,
+        img_types: tuple[ImageType | ImageTypeValue, ...] = DEFAULT_IMAGE_TYPES,
         validate: bool = False,
     ) -> None:
         if isinstance(__value, str):
-            df = read(resolve(__value, catalog), img_types=img_types).sort_index(axis=0, level=[ID, IMG_TYPE])
+            df = read(resolve(__value, catalog), img_types=ImageType.map((img_types))).sort_index(
+                axis=0, level=[ID, IMG_TYPE]
+            )
             if catalog or data_dir:
                 prefix = resolve(__value, data_dir)
                 df[FILE_NAME] = df[FILE_NAME].map(lambda s: os.path.join(prefix, s)).astype("string")

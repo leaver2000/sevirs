@@ -42,8 +42,6 @@ class Nd(tuple[Unpack[Ts]]):
     >>> a: np.ndarray[Nd[2, 2], np.int64] = np.array([[1, 2], [3, 4]])
     """
 
-    # def
-
 
 N = enum.Enum(":", {"_": slice(None)})
 _NdT = TypeVar("_NdT", bound=Nd, contravariant=True)

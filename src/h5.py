@@ -64,7 +64,7 @@ def reshape_lightning_data(
     t = data[:, FLASH_TIME]
     # Filter/separate times
     if time_slice.stop is None:  # select only one time bin
-        z = np.digitize(t, FRAME_TIMES) - 1.0
+        z = np.digitize(t, FRAME_TIMES) - 1
         z[z == -1] = 0  # special case:  frame 0 uses lght from frame 1
     else:  # compute z coordinate based on bin location times
         if time_slice.stop >= 0:  # special case:  frame 0 uses lght from frame 1
@@ -81,7 +81,7 @@ def reshape_lightning_data(
     return np.bincount(lwt, minlength=np.prod(shape)).reshape((1,) + shape).astype(dtype)
 
 
-class H5File(h5py.File, Dataset[Array[Nd[N, N, N, N], np.int16]]):
+class H5File(h5py.File):
     """subclass of h5py.File that provides a few convenience methods for SEVIR files and __reduce__ to allow
     for pickling which is required for multiprocessing."""
 
@@ -99,80 +99,84 @@ class H5File(h5py.File, Dataset[Array[Nd[N, N, N, N], np.int16]]):
 
     @property
     def event_ids(self) -> NDArray[np.bytes_]:
-        return super().__getitem__(ID)[...]
+        return super().__getitem__(ID)[...]  # type: ignore
 
     def __getitem__(self, __id: bytes | str, /) -> Array[Nd[N, N, N, N], np.int16]:
         img_t = self._img_type
 
         return typing.cast(
             Array[Nd[N, N, N, N], np.int16],
-            reshape_lightning_data(super().__getitem__(__id)[...], dtype=np.int16)
+            reshape_lightning_data(super().__getitem__(__id))  # type: ignore
             if img_t == LIGHTNING
-            else super().__getitem__(img_t)[self.event_ids == __id],
+            else super().__getitem__(img_t),  # type: ignore
         )
-
-        # return arr
 
     def get_by_file_index(self, index: int) -> Array[Nd[N, N, N, N], np.int16]:
         return self[self.event_ids[index]]
 
 
-class H5Store(Dataset[list[Array[Nd[N, N, N, N], np.int16]]]):
-    __slots__ = ("_index", "_data", "_bar")
+DATA_INDEX = "data_index"
+
+
+class H5Store(typing.Mapping[str | bytes, list[Array[Nd[N, N, N, N], np.int16]]]):
+    __slots__ = ("_data", "_sidx", "_dbar", "_keys")
     if typing.TYPE_CHECKING:
-        _index: pd.Series[int]
+        _sidx: pd.Series[int]
         _data: list[H5File]
-        _bar: tqdm.tqdm
+        _dbar: tqdm.tqdm
 
     def __init__(self, catalog: Catalog, nproc: int | None = 1) -> None:
         # validate the catalog before attempting to open files
         index_cols = [ID, IMG_TYPE, FILE_INDEX]
-        required_cols = [FILE_NAME] + index_cols  # @#[FILE_NAME, ID, IMG_TYPE, FILE_INDEX]
-        df = catalog.to_pandas().reset_index(drop=False)
+        required_cols = [FILE_NAME] + index_cols
+        df = catalog.to_pandas().reset_index(drop=False).astype({ID: "bytes"})
         if not set(df.columns).issuperset(required_cols):
             raise ValueError(f"Catalog is missing columns: {required_cols}")
 
-        self._index = pd.Series(index=pd.MultiIndex.from_frame(df[index_cols]), name="data_index", dtype="Int64")
+        self._sidx = pd.Series(index=pd.MultiIndex.from_frame(df[index_cols]), name=DATA_INDEX, dtype="Int64")
+        self._keys = set(df[ID])
         self._data = []
-        self._bar = tqdm.tqdm(total=df.file_name.nunique())
 
         logging.info("Opening HDF5 files")
+        self._dbar = tqdm.tqdm(total=df[FILE_NAME].nunique())
         with multiprocessing.pool.ThreadPool(nproc) as pool:
             pool.starmap(
                 self._load_file_series, df[[FILE_NAME, ID, IMG_TYPE, FILE_INDEX]].groupby(by=[FILE_NAME, IMG_TYPE])
             )
 
     def _load_file_series(self, file_nt: tuple[str, str], df: pd.DataFrame) -> None:
-        self._index.loc[df[[ID, IMG_TYPE, FILE_INDEX]].to_numpy()] = len(self._data)
-        # H5File(*file_nt)
-        self._data.append(file_nt)  # type: ignore
-        self._bar.update(1)
+        self._sidx.loc[df[[ID, IMG_TYPE, FILE_INDEX]].to_numpy()] = len(self._data)
+        self._data.append(H5File(*file_nt))
+        self._dbar.update(1)
 
     # =========================================================================
-    #
-    def __len__(self) -> int:
-        return len(self._data)
+    # Mapping interface
 
     def __getitem__(self, __id: str | bytes) -> list[Array[Nd[N, N, N, N], np.int16]]:
-        arr = typing.cast(
-            typing.Sequence[tuple[int, int]],
-            self._index[__id].reset_index()[["data_index", FILE_INDEX]].to_numpy(),  # type: ignore
-        )
-        print([f"self._data[{__id!r}].get_by_event_id({di!r})[{fi}:, :, :, :]" for di, fi in arr])
-        # return [self._data[di].get_by_event_id(id_)[fi:, :, :, :] for di, fi in arr]
-        return [self._data[i] for i, _ in arr]
+        if isinstance(__id, str):
+            __id = __id.encode("utf-8")
+        df = self._sidx.loc[__id, :, :].reset_index()
+        data_file_index = typing.cast(typing.Iterable[tuple[int, int]], df[[DATA_INDEX, FILE_INDEX]].to_numpy())
+        return [self._data[di][__id][fi : fi + 1, :, :, :] for di, fi in data_file_index]
 
-    def groupby(
-        self, by: list[typing.Literal["id", "img_type", "file_index"]]
-    ) -> SeriesGroupBy[int, tuple[str | int, ...]]:
-        return self._index.groupby(by=by)
+    def __iter__(self) -> typing.Iterator[bytes]:
+        return iter(self._keys)
+
+    def __len__(self) -> int:
+        return len(self._data)
 
 
 def main() -> None:
     from .catalog import Catalog
 
-    store = H5Store(Catalog())
-    print(store["R18032123577290", "ir069", 166])
+    # "vis", "ir069", "ir107", "vil", "lght"
+    store = H5Store(Catalog(img_types=("vis", "ir069", "ir107", "vil", "lght")))
+    d = store["R18032123577290"]
+    for a in d:
+        print(a.shape)
+    # print(l.shape, r.shape)
+    #     np.array(store["R18032123577290"])
+    #     )
 
 
 if __name__ == "__main__":
