@@ -10,8 +10,6 @@ DEFAULT_PATH_TO_SEVIR = os.getenv("PATH_TO_SEVIR", None) or os.path.abspath(os.p
 DEFAULT_CATALOG = "CATALOG.csv"
 DEFAULT_DATA = "data"
 
-
-# =====================================================================================================================
 # - Lightning Data
 DEFAULT_N_FRAMES = 49  # TODO:  don't hardcode this
 # Nominal Frame time offsets in minutes (used for non-raster types)

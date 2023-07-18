@@ -19,6 +19,8 @@ import pyarrow as pa
 from typing_extensions import Self
 
 
+# =====================================================================================================================
+# - Generic Adapters [Arrays, Series, Tensors, DataFrames, etc.]
 class SupportsShapeAndSize(Protocol):
     @property
     def shape(self) -> tuple[int, ...]:
@@ -73,8 +75,7 @@ class GenericAdapter(Generic[_ShapeProto_T]):
 
 
 # =====================================================================================================================
-# DataFrame Protocol Adapters
-# =====================================================================================================================
+# - DataFrame Adapters
 _Column_co = TypeVar("_Column_co", covariant=True)
 _Dtype_co = TypeVar("_Dtype_co", covariant=True)
 
@@ -104,8 +105,6 @@ class GenericFrameAdapter(
         return self._data.dtypes
 
 
-# - polars.DataFrame
-
 # these aliases are used to annotate DataFrame.__getitem__()
 # MultiRowSelector indexes into the vertical axis and
 # MultiColSelector indexes into the horizontal axis
@@ -114,6 +113,7 @@ MultiRowSelector: TypeAlias = "slice | range | list[int] | pl.Series"
 MultiColSelector: TypeAlias = "slice | range | list[int] | list[str] | list[bool] | pl.Series"
 
 
+# - polars.DataFrame
 class PolarsAdapter(GenericFrameAdapter[pl.DataFrame, list[str], list[pl.PolarsDataType]]):
     # - Transformations
     def to_polars(self) -> pl.DataFrame:

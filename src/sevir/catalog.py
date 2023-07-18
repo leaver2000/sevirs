@@ -27,9 +27,8 @@ from .constants import (
     ImageType,
 )
 
+
 # =====================================================================================================================
-
-
 def read(
     catalog: str = os.path.join(DEFAULT_PATH_TO_SEVIR, DEFAULT_CATALOG),
     sevir_data: str = os.path.join(DEFAULT_PATH_TO_SEVIR, DEFAULT_DATA),
@@ -65,8 +64,6 @@ def subset_by_image_types(df: pl.DataFrame, img_types: list[ImageType]) -> pl.Da
 
 
 # =====================================================================================================================
-
-
 class Catalog(PolarsAdapter):
     def __init__(
         self,
@@ -99,7 +96,6 @@ class Catalog(PolarsAdapter):
         self._repr_meta_ = ", ".join(self.image_set)
 
     # - Properties
-
     @property
     def id(self) -> pl.Series:  # noqa
         return self.data[ID]
@@ -128,9 +124,7 @@ class Catalog(PolarsAdapter):
     def time_utc(self) -> pl.Series:
         return self.data[TIME_UTC]
 
-    # =================================================================================================================
     # - Methods
-
     def where(
         self,
         col: str,
