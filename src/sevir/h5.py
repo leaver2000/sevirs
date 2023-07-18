@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import copy
 import logging
-import multiprocessing.pool
+
+# import multiprocessing.pool
 import typing
 from typing import Final
 
@@ -12,9 +14,9 @@ import tqdm
 from numpy.typing import NDArray
 
 from ._typing import AnyT, Array, N, Nd
-from .constants import DATA_INDEX
-from .constants import DEFAULT_FRAME_TIMES as FRAME_TIMES
 from .constants import (
+    DATA_INDEX,
+    DEFAULT_FRAME_TIMES,
     FILE_INDEX,
     FILE_NAME,
     FLASH_TIME,
@@ -37,6 +39,7 @@ def reshape_lightning_data(
     *,
     time_slice=slice(0, None),
     img_size: int = 48,
+    frame_times: Array[Nd[N], np.float64] = DEFAULT_FRAME_TIMES,
 ) -> Array[Nd[N, N, N, N], np.int16]:
     """Converts Nx5 lightning data matrix into a 2D grid of pixel counts
 
@@ -53,7 +56,7 @@ def reshape_lightning_data(
     (1, 48, 48, 1)
 
     """
-    shape = n_length, n_width, _ = (img_size, img_size, len(FRAME_TIMES) if time_slice.stop is None else 1)
+    shape = n_length, n_width, _ = (img_size, img_size, len(frame_times) if time_slice.stop is None else 1)
 
     if data.shape[0] == 0:  # there are no samples
         return np.zeros(shape, dtype=np.int16)
@@ -67,15 +70,15 @@ def reshape_lightning_data(
     t = data[:, FLASH_TIME]
     # Filter/separate times
     if time_slice.stop is None:  # select only one time bin
-        z = np.digitize(t, FRAME_TIMES) - 1
+        z = np.digitize(t, frame_times) - 1
         z[z == -1] = 0  # special case:  frame 0 uses lght from frame 1
     else:  # compute z coordinate based on bin location times
         if time_slice.stop >= 0:  # special case:  frame 0 uses lght from frame 1
-            mask_time = np.logical_and(t >= FRAME_TIMES[0], t < FRAME_TIMES[1])
-        elif time_slice.stop < len(FRAME_TIMES):
-            mask_time = np.logical_and(t >= FRAME_TIMES[time_slice.stop - 1], t < FRAME_TIMES[time_slice.stop])
+            mask_time = np.logical_and(t >= frame_times[0], t < frame_times[1])
+        elif time_slice.stop < len(frame_times):
+            mask_time = np.logical_and(t >= frame_times[time_slice.stop - 1], t < frame_times[time_slice.stop])
         else:
-            mask_time = t >= FRAME_TIMES[-1]
+            mask_time = t >= frame_times[-1]
         data = data[mask_time, :]
 
         z = np.zeros(data.shape[0], dtype=np.int64)
@@ -174,8 +177,6 @@ class H5Store(typing.Mapping[str | bytes, list[Array[Nd[N, N, N, N], np.int16]]]
 
     @property
     def data(self) -> list[H5File]:
-        import copy
-
         return copy.copy(self._data)
 
     # - Mapping interface
@@ -211,14 +212,3 @@ class H5Store(typing.Mapping[str | bytes, list[Array[Nd[N, N, N, N], np.int16]]]
             f.close()
         self._data.clear()
         self._dfdx = self._dfdx.with_columns(**{DATA_INDEX: None})
-
-
-def main() -> None:
-    from .catalog import Catalog
-
-    store = H5Store(Catalog(img_types=("vis", "ir069", "ir107", "vil", "lght")))
-    store.close_all()
-
-
-if __name__ == "__main__":
-    main()

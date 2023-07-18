@@ -1,3 +1,7 @@
+import os
+
+os.environ["PATH_TO_SEVIR"] = "/mnt/nuc/c/sevir"
+
 import pytest
 from sevir.catalog import Catalog
 from sevir.h5 import H5Store
