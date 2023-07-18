@@ -1,19 +1,26 @@
 # flake8: noqa
 from __future__ import annotations
 
-import sys
-from typing import (
-    Annotated,
-    Any,
-    Callable,
-    NewType,
-    ParamSpec,
-    Sequence,
-    SupportsIndex,
-    TypeAlias,
-    TypeVar,
-)
+__all__ = [
+    "Any",
+    "Generic",
+    #
+    "Self",
+    "Unpack",
+    "TypeVarTuple",
+    #
+    "N",
+    "Nd",
+    "Ts",
+    "AnyT",
+    "Array",
+    "Callable",
+    "HashableT",
+    "ColumnIndexerType",
+]
 import enum
+import sys
+from typing import Any, Callable, Generic, SupportsIndex, TypeAlias, TypeVar, get_args
 
 if sys.version_info < (3, 11):
     from typing_extensions import Self, TypeVarTuple, Unpack
@@ -34,8 +41,18 @@ ValueT = TypeVar("ValueT")
 ScalarT = TypeVar("ScalarT", bound=Scalar)
 
 
+def cast_literal_list(cls: type[ValueT]) -> ValueT:
+    """
+    >>> Numbers = typing.Literal[1, 2, 3]
+    >>> NUM_LIST = ONE, TWO, THREE = cast_literal_list(list[Numbers])
+    >>> NUM_LIST
+    [1, 2, 3]
+    """
+    return list(get_args(get_args(cls)[0]))  # type: ignore
+
+
 # =====================================================================================================================
-class Nd(tuple[Unpack[Ts]]):
+class Nd(typing.Generic[Unpack[Ts]]):
     """type alias for a tuple of ints or slices
     >>> import numpy as np
     >>> from sevir._typing import Nd
