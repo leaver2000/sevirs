@@ -14,10 +14,6 @@ build-backend = "setuptools.build_meta"
 name = "sevir"
 version = "0.0.1"
 requires-python = ">=3.10"
-
-[tool.setuptools]
-include-package-data = true
-#dynamic = ["dependencies", "optional-dependencies"]
 description = "Interface to SEVIR dataset"
 authors = [
     {name = "Jason Leaver", email = "jason.leaver@us.af.mil"},
@@ -35,17 +31,11 @@ classifiers = [
     "Topic :: Utilities",
 ]
 
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
-where = ["sevir"]
-
-
-# [tool.setuptools.packages.find]
-# where = ["src/"]
-# [tool.setuptools.packages.find]
-# where = ["src"]  # list of folders that contain the packages (["."] by default)
-# include = ["sevir*"]  # package names should match these glob patterns (["*"] by default)
-# exclude = ["my_package.tests*"]  # exclude packages matching these glob patterns (empty by default)
-# namespaces = false  # to disable scanning PEP 420 namespaces (true by default)
+where = ["src/"]
 
 [tool.setuptools.package-data]
 sevir = ["py.typed"]
