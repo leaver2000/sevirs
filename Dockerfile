@@ -6,13 +6,8 @@
 
 # Example:
 # - docker build -t $USER/sevir . 
-# - docker run -it --rm --gpus all $USER/sevir /bin/bash
-# - docker run -it --volume=/mnt/nuc/c/sevir/:/opt/sevir/ $USER/sevir /bin/bash
-# - docker run -it -p 8888:8888 --gpus all  --volume /mnt/nuc/c/sevir:/home/vscode $USER/sevir
+# - docker run -it -p 8888:8888 --gpus all --volume $PATH_TO_SEVIR:/home/vscode $USER/sevir
 
-
-# - docker run -it -p 8888:8888 --gpus all  --volume /mnt/nuc/c/sevir:/home/vscode $USER/sevir
-# - docker run -it --rm  --volume /mnt/nuc/c:/home/vscode $USER/sevir /bin/bash
 FROM  nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04 AS base
 USER root
 
@@ -117,7 +112,7 @@ RUN apt-get update -y \
     && apt-get install -y --no-install-recommends \
     python3.10-dev \
     && rm -rf /var/lib/apt/lists/*
-
+# hadolint ignore=DL3013
 RUN python3.10 -m pip install --upgrade pip && python3.10 -m pip install --no-cache-dir \
     Cartopy==0.21.1 \
     matplotlib==3.7.2
@@ -175,8 +170,6 @@ RUN python3.10 -m pip install . --no-cache-dir \
     && rm -rf /tmp/* \
     && rm -rf /var/lib/apt/lists/*
 
-
-# still need to give USER permissions to the /opt/venv
 USER $USERNAME
 ARG HOME=/home/$USERNAME
 WORKDIR $HOME
@@ -184,12 +177,4 @@ COPY --chown=$USER_UID:$USER_GID notebooks/ examples/
 VOLUME $HOME/sevir-volume
 ENV PATH_TO_SEVIR=$HOME/sevir-volume/sevir
 
-
-# set up the volume for the data
-
 CMD [ "jupyter", "notebook", "--ip=0.0.0.0", "--NotebookApp.token=''", "--NotebookApp.password=''", "--no-browser" ]
-#--mount source=myvol2,target=/app --volume=/mnt/nuc/c:/opt $USER/sevir
-
-# docker run -it --rm --gpus all -v /mnt/nuc/c/sevir:/mnt  $USER/sevir /bin/bash
-#  -e PATH_TO_SEVIR="./config/config.json" \
-#  $USER/sevir /bin/bash
