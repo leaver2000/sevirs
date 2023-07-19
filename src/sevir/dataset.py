@@ -59,11 +59,11 @@ class SEVIRGenerator(IterableDataset[tuple[Tensor, Tensor]]):
         assert len(x.image_set) + len(y.image_set) == len(image_set)
         self.store = H5Store(meta, nproc=nproc)
 
-    @typing.overload
+    @typing.overload  # type: ignore[misc]
     def get_batch(
         self,
-        img_id: int | str | bytes | None = None,
-        img_type: list[ImageType] | None = None,
+        img_id=...,
+        img_type=...,
         metadata: typing.Literal[False] = ...,
     ) -> tuple[Tensor, Tensor]:
         ...
@@ -71,8 +71,8 @@ class SEVIRGenerator(IterableDataset[tuple[Tensor, Tensor]]):
     @typing.overload
     def get_batch(
         self,
-        img_id: int | str | bytes | None = None,
-        img_type: list[ImageType] | None = None,
+        img_id=...,
+        img_type=...,
         metadata: typing.Literal[True] = ...,
     ) -> tuple[tuple[Tensor, Tensor], pl.DataFrame]:
         ...
@@ -91,11 +91,11 @@ class SEVIRGenerator(IterableDataset[tuple[Tensor, Tensor]]):
         x = np.array(self.store[img_id, img_type or self.x_img_types])
         y = np.array(self.store[img_id, self.y_img_types])
         values = torch.from_numpy(x), torch.from_numpy(y)
-        if not metadata:
-            return values
-        return (values, self.meta.data.filter(self.meta.id == img_id))
+        if metadata is True:
+            return (values, self.meta.data.filter(self.meta.id == img_id))
+        return values
 
-    @typing.overload
+    @typing.overload  # type: ignore[misc]
     def iter_batches(
         self,
         *,
@@ -118,7 +118,7 @@ class SEVIRGenerator(IterableDataset[tuple[Tensor, Tensor]]):
     ) -> Iterator[tuple[Tensor, Tensor]] | Iterator[tuple[tuple[Tensor, Tensor], pl.DataFrame]]:
         bar = tqdm.tqdm(total=len(self.image_ids))
         for img_id in self.image_ids:
-            yield self.get_batch(img_id, metadata=metadata)  # type: ignore
+            yield self.get_batch(img_id, metadata=metadata)  # type: ignore[call-overload]
             bar.update(1)
         bar.close()
 
@@ -211,9 +211,7 @@ def main(
 {IR_069=}
 {IR_107=}
 {VIS=}
-{LGHT=}
- 
-"""
+{LGHT=}"""
     )
 
     with SEVIRGenerator(

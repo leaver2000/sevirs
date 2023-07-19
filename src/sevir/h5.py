@@ -108,7 +108,7 @@ class H5File(h5py.File):
 
         return typing.cast(
             Array[Nd[N, N, N, N], np.int16],
-            reshape_lightning_data(super().__getitem__(__id)) if img_t == LGHT else super().__getitem__(img_t),  # type: ignore[unused-ignore]
+            reshape_lightning_data(super().__getitem__(__id)) if img_t == LGHT else super().__getitem__(img_t),  # type: ignore[unused-ignore] # noqa: E501
         )
 
     def get_by_file_index(self, index: int) -> Array[Nd[N, N, N, N], np.int16]:
@@ -158,7 +158,10 @@ class H5Store(typing.Mapping[str | bytes, list[Array[Nd[N, N, N, N], np.int16]]]
         self._dbar.close()
 
     def _load_dataframe_index(self, group: tuple[str, ImageType], df: pl.DataFrame) -> None:
-        """instead of putting the files into the dataframe, a reference to the index of the file in the list is stored."""
+        """
+        instead of putting the files into the dataframe, a reference to the index of the file in the list is stored
+        in the DataFrame Index `dfdx`
+        """
         f_name, img_t = group
         self._dfdx = df.with_columns(
             pl.when(df[FILE_NAME] == f_name).then(len(self._data)).otherwise(df[DATA_INDEX]).alias(DATA_INDEX)

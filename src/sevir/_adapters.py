@@ -166,20 +166,20 @@ class PolarsAdapter(GenericFrameAdapter[pl.DataFrame, list[str], list[pl.PolarsD
             | tuple[MultiRowSelector, int | str]
             | tuple[int, int | str]
         ),
-    ) -> Self | pl.Series:
+    ) -> Self | pl.Series | Any:
         if isinstance(item, (pl.Series, np.ndarray, pd.Series)) and item.dtype in (
             pd.BooleanDtype,
             pl.Boolean,
             np.bool_,
             bool,
         ):
-            r = self._data.filter(item)
+            data = self._data.filter(item)
         else:
-            r = self._data[item]
+            data = self._data[item]  # type: ignore[assignment]
 
-        if isinstance(r, pl.DataFrame):
-            return self._manager(r, inplace=False)
-        return r
+        if isinstance(data, pl.DataFrame):
+            return self._manager(data, inplace=False)
+        return data
 
 
 # - pandas.DataFrame
