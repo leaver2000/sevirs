@@ -29,9 +29,8 @@ from .constants import (
 )
 
 if typing.TYPE_CHECKING:
-    # we can avoid circular imports by using forward references
+    # avoid potential circular import
     from .catalog import Catalog
-# DATA_INDEX = "data_index"
 
 
 def reshape_lightning_data(
@@ -210,7 +209,7 @@ class H5Store(typing.Mapping[str | bytes, list[Array[Nd[N, N, N, N], np.int16]]]
         return len(self._data)
 
     # - Methods
-    def close_all(self) -> None:
+    def close(self) -> None:
         for f in self._data:
             f.close()
         self._data.clear()

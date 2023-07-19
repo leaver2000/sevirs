@@ -144,7 +144,8 @@ class Catalog(PolarsAdapter):
     def split_by_types(self, x: list[ImageType], y: list[ImageType]) -> tuple[Catalog, Catalog]:
         img_types = self.image_set
 
-        if not set(x + y).issubset(img_types):
+        # if not set(x + y).issubset(img_types):
+        if not set(x + y) <= img_types:
             raise ValueError(
                 f"Catalog does not contain all of the requested image types: {set(x + y) - img_types}."
                 " Use `Catalog.get_by_img_type` to get a subset of the catalog."

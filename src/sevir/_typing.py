@@ -20,14 +20,22 @@ __all__ = [
 ]
 import enum
 import sys
-from typing import Any, Callable, Generic, SupportsIndex, TypeAlias, TypeVar, get_args
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Generic,
+    Hashable,
+    SupportsIndex,
+    TypeAlias,
+    TypeVar,
+    get_args,
+)
 
 if sys.version_info < (3, 11):
     from typing_extensions import Self, TypeVarTuple, Unpack
 else:
     from typing import Self, Unpack, TypeVarTuple
-
-import typing
 
 import numpy as np
 import pandas as pd
@@ -35,8 +43,8 @@ from pandas._typing import HashableT, Scalar
 
 # =====================================================================================================================
 Ts = TypeVarTuple("Ts")
-AnyT = TypeVar("AnyT", bound=typing.Any)
-KeyT = TypeVar("KeyT", bound=typing.Hashable)
+AnyT = TypeVar("AnyT", bound=Any)
+KeyT = TypeVar("KeyT", bound=Hashable)
 ValueT = TypeVar("ValueT")
 ScalarT = TypeVar("ScalarT", bound=Scalar)
 
@@ -52,7 +60,7 @@ def cast_literal_list(cls: type[ValueT]) -> ValueT:
 
 
 # =====================================================================================================================
-class Nd(typing.Generic[Unpack[Ts]]):
+class Nd(Generic[Unpack[Ts]]):
     """type alias for a tuple of ints or slices
     >>> import numpy as np
     >>> from sevir._typing import Nd
@@ -74,7 +82,7 @@ Runtime type is 'ndarray'
 
 
 # =====================================================================================================================
-if typing.TYPE_CHECKING:
+if TYPE_CHECKING:
     from pandas._typing import IndexType, MaskType
     from pandas.core.indexing import _IndexSliceTuple
 else:
@@ -88,7 +96,7 @@ slice
 | HashableT
 | IndexType
 | MaskType
-| typing.Callable[[pd.DataFrame], IndexType | MaskType | list[HashableT]]
+| Callable[[pd.DataFrame], IndexType | MaskType | list[HashableT]]
 | list[HashableT]
 )"""
 LocIndexerType: TypeAlias = """(

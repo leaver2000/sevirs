@@ -28,8 +28,8 @@ __all__ = [
     "VIL",
     "LGHT",
     "Catalog",
-    "SEVIRGenerator",
-    "SEVIRLoader",
+    "TensorGenerator",
+    "TensorLoader",
     "H5File",
     "H5Store",
     "catalog",
@@ -69,5 +69,5 @@ from .constants import (
     WIDTH_M,
     ImageType,
 )
-from .dataset import SEVIRGenerator, SEVIRLoader
+from .dataset import TensorGenerator, TensorLoader
 from .h5 import H5File, H5Store
