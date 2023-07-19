@@ -25,7 +25,7 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
 ENV PATH="/opt/venv/bin:$PATH"
 USER 1001
 # =====================================================================================================================
-# create a compiler stage; this will be omitted from the final image
+# Compiler Stage; this will be omitted from the final image
 # =====================================================================================================================
 FROM base AS compiler
 USER root
@@ -51,7 +51,7 @@ RUN apt-get update -y \
 USER 1001
 
 # =====================================================================================================================
-# eccodes is a library for decoding and encoding grib files.
+# EcCodes is a library for decoding and encoding grib files.
 # =====================================================================================================================
 FROM compiler AS eccodes
 USER root
@@ -78,15 +78,6 @@ FROM compiler AS proj
 USER root
 
 WORKDIR /proj
-# SHELL ["/bin/bash","-c"]
-# ENV DEBIAN_FRONTEND=noninteractive
-# hadolint ignore=DL3008
-# RUN apt-get update -y \
-#     && apt-get install -y --no-install-recommends \
-#     zlib1g-dev \
-#     libsqlite3-dev sqlite3 libcurl4-gnutls-dev libtiff5-dev \
-#     && rm -rf /var/lib/apt/lists/*
-
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN wget -c --progress=dot:giga \
     https://github.com/OSGeo/PROJ/archive/refs/tags/9.0.1.tar.gz  -O - | tar -xz -C . --strip-component=1 
