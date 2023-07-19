@@ -1,14 +1,18 @@
+"""
+A mix of abstract base classes and generic adapters for various data structures.
+"""
 from __future__ import annotations
 
+import abc
 from typing import (
     TYPE_CHECKING,
     Any,
     Final,
     Generic,
+    Optional,
     Protocol,
     TypeAlias,
     TypeVar,
-    cast,
     overload,
 )
 
@@ -18,10 +22,18 @@ import polars as pl
 import pyarrow as pa
 from typing_extensions import Self
 
+# =====================================================================================================================
+# - Type Variables
+_T = TypeVar("_T", bound=Any)
+_T1_co = TypeVar("_T1_co", covariant=True)
+_T2_co = TypeVar("_T2_co", covariant=True)
+_ShapeProto_T = TypeVar("_ShapeProto_T", bound="ShapeAndSizeProtocol")
+_FrameProto_T = TypeVar("_FrameProto_T", bound="FrameProtocol[Any, Any]")
+
 
 # =====================================================================================================================
-# - Generic Adapters [Arrays, Series, Tensors, DataFrames, etc.]
-class SupportsShapeAndSize(Protocol):
+# - Protocols
+class ShapeAndSizeProtocol(Protocol):
     @property
     def shape(self) -> tuple[int, ...]:
         ...
@@ -30,41 +42,61 @@ class SupportsShapeAndSize(Protocol):
         ...
 
 
-_ShapeProto_T = TypeVar("_ShapeProto_T", bound=SupportsShapeAndSize)
+class FrameProtocol(ShapeAndSizeProtocol, Generic[_T1_co, _T2_co], Protocol):
+    @property
+    def columns(self) -> _T1_co:
+        ...
+
+    @property
+    def dtypes(self) -> _T2_co:
+        ...
 
 
-class GenericAdapter(Generic[_ShapeProto_T]):
+class SupportsClose(Protocol):
+    def close(self) -> None:
+        ...
+
+
+# =====================================================================================================================
+class GenericDataManager(Generic[_T]):
     __slots__ = ("_data",)
 
     if TYPE_CHECKING:
-        _data: Final[_ShapeProto_T]  # type: ignore
-        _repr_meta_: str
+        _data: Final[_T]  # type: ignore[misc]
 
     # - Constructors
-    def _manager(self, data: _ShapeProto_T, inplace: bool) -> Self:
+    def _manager(self, data: _T, inplace: bool) -> Self:
         if inplace:
-            self._data = data  # type: ignore
+            setattr(self, "_data", data)
             return self
         return self.__class__(data)
 
-    def __init__(self, data: GenericAdapter | _ShapeProto_T) -> None:
-        self._data = cast(_ShapeProto_T, data._data if isinstance(data, GenericAdapter) else data)
+    def __init__(self, data: _T) -> None:
+        self._data = data
+
+    # - Properties
+    @property
+    def data(self) -> _T:
+        return self._data
+
+
+# =====================================================================================================================
+# - Generic Adapters [Arrays, Series, Tensors, DataFrames, etc.]
+class GenericDataAdapter(GenericDataManager[_ShapeProto_T]):
+    if TYPE_CHECKING:
+        _repr_meta_: Optional[Any]
 
     # - Properties
     @property
     def shape(self) -> tuple[int, ...]:
         return self._data.shape
 
-    @property
-    def data(self) -> _ShapeProto_T:
-        return self._data
-
     # - Dunder Methods
     def __len__(self) -> int:
         return len(self._data)
 
     def __repr__(self) -> str:
-        repr_meta = getattr(self, "_repr_meta_", "...")
+        repr_meta = getattr(self, "_repr_meta_") or "..."
         return f"{self.__class__.__name__}[{repr_meta}] {repr(self._data)}"
 
     def _repr_html_(self) -> str:
@@ -75,33 +107,14 @@ class GenericAdapter(Generic[_ShapeProto_T]):
 
 
 # =====================================================================================================================
-# - DataFrame Adapters
-_Column_co = TypeVar("_Column_co", covariant=True)
-_Dtype_co = TypeVar("_Dtype_co", covariant=True)
-
-
-class FrameProto(SupportsShapeAndSize, Generic[_Column_co, _Dtype_co], Protocol):
+# - DataFrames Adapters
+class GenericFrameAdapter(GenericDataAdapter[_FrameProto_T], Generic[_FrameProto_T, _T1_co, _T2_co]):
     @property
-    def columns(self) -> _Column_co:
-        ...
-
-    @property
-    def dtypes(self) -> _Dtype_co:
-        ...
-
-
-_SupportsColumnsAndDtypeT = TypeVar("_SupportsColumnsAndDtypeT", bound=FrameProto[Any, Any])
-
-
-class GenericFrameAdapter(
-    GenericAdapter[_SupportsColumnsAndDtypeT], Generic[_SupportsColumnsAndDtypeT, _Column_co, _Dtype_co]
-):
-    @property
-    def columns(self) -> _Column_co:
+    def columns(self) -> _T1_co:
         return self._data.columns
 
     @property
-    def dtypes(self) -> _Dtype_co:
+    def dtypes(self) -> _T2_co:
         return self._data.dtypes
 
 
@@ -166,20 +179,20 @@ class PolarsAdapter(GenericFrameAdapter[pl.DataFrame, list[str], list[pl.PolarsD
             | tuple[MultiRowSelector, int | str]
             | tuple[int, int | str]
         ),
-    ) -> Self | pl.Series:
+    ) -> Self | pl.Series | Any:
         if isinstance(item, (pl.Series, np.ndarray, pd.Series)) and item.dtype in (
             pd.BooleanDtype,
             pl.Boolean,
             np.bool_,
             bool,
         ):
-            r = self._data.filter(item)
+            data = self._data.filter(item)
         else:
-            r = self._data[item]
+            data = self._data[item]  # type: ignore[assignment]
 
-        if isinstance(r, pl.DataFrame):
-            return self._manager(r, inplace=False)
-        return r
+        if isinstance(data, pl.DataFrame):
+            return self._manager(data, inplace=False)
+        return data
 
 
 # - pandas.DataFrame
@@ -192,3 +205,33 @@ class PandasAdapter(GenericFrameAdapter[pd.DataFrame, pd.Index | pd.MultiIndex, 
 
     def to_arrow(self) -> pa.Table:
         return pa.Table.from_pandas(self._data)
+
+
+# =====================================================================================================================
+# - Abstract Classes
+class AbstractDataCloser(GenericDataManager[_T], abc.ABC):
+    """
+    ```
+    import io
+
+    class Example(AbstractDataCloser[list[io.TextIOWrapper]]):
+        def close(self) -> None:
+            for x in self.data:
+                x.close()
+            self.data.clear()
+
+    with Example([open(file) for file in ("file1.txt", "file2.txt")]) as x:
+        print(len(x.data))
+    print(len(x.data))
+    ```
+    """
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_) -> None:
+        self.close()
+
+    @abc.abstractmethod
+    def close(self) -> None:
+        ...

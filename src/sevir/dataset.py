@@ -24,10 +24,10 @@ logging.getLogger().setLevel(logging.INFO)
 idx = pd.IndexSlice
 
 
-class SEVIRGenerator(IterableDataset[tuple[Tensor, Tensor]]):
-    __slots__ = ("store", "image_ids", "x_img_types", "y_img_types", "x", "y")
+class TensorGenerator(IterableDataset[tuple[Tensor, Tensor]]):
+    __slots__ = ("data", "image_ids", "x_img_types", "y_img_types", "x", "y")
     if typing.TYPE_CHECKING:
-        store: Final[H5Store]
+        data: Final[H5Store]
         image_ids: Final[list[str]]
         x_img_types: Final[list[ImageType]]
         y_img_types: Final[list[ImageType]]
@@ -57,13 +57,13 @@ class SEVIRGenerator(IterableDataset[tuple[Tensor, Tensor]]):
         self.x_img_types, self.y_img_types = list(x.image_set), list(y.image_set)
         assert meta.id.n_unique() == x.id.n_unique() == y.id.n_unique()
         assert len(x.image_set) + len(y.image_set) == len(image_set)
-        self.store = H5Store(meta, nproc=nproc)
+        self.data = H5Store(meta, nproc=nproc)
 
-    @typing.overload
+    @typing.overload  # type: ignore[misc]
     def get_batch(
         self,
-        img_id: int | str | bytes | None = None,
-        img_type: list[ImageType] | None = None,
+        img_id=...,
+        img_type=...,
         metadata: typing.Literal[False] = ...,
     ) -> tuple[Tensor, Tensor]:
         ...
@@ -71,8 +71,8 @@ class SEVIRGenerator(IterableDataset[tuple[Tensor, Tensor]]):
     @typing.overload
     def get_batch(
         self,
-        img_id: int | str | bytes | None = None,
-        img_type: list[ImageType] | None = None,
+        img_id=...,
+        img_type=...,
         metadata: typing.Literal[True] = ...,
     ) -> tuple[tuple[Tensor, Tensor], pl.DataFrame]:
         ...
@@ -88,14 +88,14 @@ class SEVIRGenerator(IterableDataset[tuple[Tensor, Tensor]]):
         if isinstance(img_id, int):
             img_id = self.image_ids[img_id]
 
-        x = np.array(self.store[img_id, img_type or self.x_img_types])
-        y = np.array(self.store[img_id, self.y_img_types])
+        x = np.array(self.data[img_id, img_type or self.x_img_types])
+        y = np.array(self.data[img_id, self.y_img_types])
         values = torch.from_numpy(x), torch.from_numpy(y)
-        if not metadata:
-            return values
-        return (values, self.meta.data.filter(self.meta.id == img_id))
+        if metadata is True:
+            return (values, self.meta.data.filter(self.meta.id == img_id))
+        return values
 
-    @typing.overload
+    @typing.overload  # type: ignore[misc]
     def iter_batches(
         self,
         *,
@@ -118,13 +118,13 @@ class SEVIRGenerator(IterableDataset[tuple[Tensor, Tensor]]):
     ) -> Iterator[tuple[Tensor, Tensor]] | Iterator[tuple[tuple[Tensor, Tensor], pl.DataFrame]]:
         bar = tqdm.tqdm(total=len(self.image_ids))
         for img_id in self.image_ids:
-            yield self.get_batch(img_id, metadata=metadata)  # type: ignore
+            yield self.get_batch(img_id, metadata=metadata)  # type: ignore[call-overload]
             bar.update(1)
         bar.close()
 
     def close(self) -> None:
         logging.info("Closing SEVIRstoreHDF5")
-        self.store.close_all()
+        self.data.close()
 
     @contextlib.contextmanager
     def session(self):
@@ -147,13 +147,13 @@ class SEVIRGenerator(IterableDataset[tuple[Tensor, Tensor]]):
             raise StopIteration
 
 
-class SEVIRLoader(DataLoader[tuple[Tensor, Tensor]]):
+class TensorLoader(DataLoader[tuple[Tensor, Tensor]]):
     if typing.TYPE_CHECKING:
-        dataset: SEVIRGenerator
+        dataset: TensorGenerator
 
     def __init__(
         self,
-        dataset: SEVIRGenerator,
+        dataset: TensorGenerator,
         batch_size: int | None = 1,
         shuffle: bool | None = None,
         sampler: Sampler | Iterable | None = None,
@@ -190,7 +190,7 @@ class SEVIRLoader(DataLoader[tuple[Tensor, Tensor]]):
             pin_memory_device=pin_memory_device,
         )
 
-    def __enter__(self) -> SEVIRLoader:
+    def __enter__(self) -> TensorLoader:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
@@ -211,12 +211,10 @@ def main(
 {IR_069=}
 {IR_107=}
 {VIS=}
-{LGHT=}
- 
-"""
+{LGHT=}"""
     )
 
-    with SEVIRGenerator(
+    with TensorGenerator(
         sevir, catalog=catalog, data_dir=data_dir, inputs=inputs, features=features
     ).session() as generator:
         i = 0
