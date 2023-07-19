@@ -104,7 +104,7 @@ RUN apt-get update -y \
     python3.10-dev \
     && rm -rf /var/lib/apt/lists/*
 # hadolint ignore=DL3013
-RUN python3.10 -m pip install --upgrade pip && python3.10 -m pip install --no-cache-dir \
+RUN python3.10 -m pip install --upgrade pip --no-cache-dir && python3.10 -m pip install --no-cache-dir \
     Cartopy==0.21.1 \
     matplotlib==3.7.2
 
@@ -121,10 +121,11 @@ ARG USER_GID=$USER_UID
 
 WORKDIR /
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# hadolint ignore=DL3008
 RUN groupadd --gid $USER_GID $USERNAME \
     && useradd -s /bin/bash --uid $USER_UID --gid $USER_GID -m $USERNAME \
     && apt-get update \
-    && apt-get install -y sudo \
+    && apt-get install -y --no-install-recommends sudo \
     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
     && chmod 0440 /etc/sudoers.d/$USERNAME \
     # clean up
