@@ -4,11 +4,19 @@ import contextlib
 import logging
 import os
 import random
-import typing
-from typing import Final, Iterable, Iterator, Sequence
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Final,
+    Iterable,
+    Iterator,
+    Literal,
+    Sequence,
+    overload,
+)
 
 import numpy as np
-import pandas as pd
 import polars as pl
 import torch
 import tqdm
@@ -21,12 +29,10 @@ from .h5 import H5Store
 
 logging.getLogger().setLevel(logging.INFO)
 
-idx = pd.IndexSlice
-
 
 class TensorGenerator(IterableDataset[tuple[Tensor, Tensor]]):
     __slots__ = ("data", "image_ids", "x_img_types", "y_img_types", "x", "y")
-    if typing.TYPE_CHECKING:
+    if TYPE_CHECKING:
         data: Final[H5Store]
         image_ids: Final[list[str]]
         x_img_types: Final[list[ImageType]]
@@ -59,21 +65,21 @@ class TensorGenerator(IterableDataset[tuple[Tensor, Tensor]]):
         assert len(x.image_set) + len(y.image_set) == len(image_set)
         self.data = H5Store(meta, nproc=nproc)
 
-    @typing.overload  # type: ignore[misc]
+    @overload  # type: ignore[misc]
     def get_batch(
         self,
         img_id=...,
         img_type=...,
-        metadata: typing.Literal[False] = ...,
+        metadata: Literal[False] = ...,
     ) -> tuple[Tensor, Tensor]:
         ...
 
-    @typing.overload
+    @overload
     def get_batch(
         self,
         img_id=...,
         img_type=...,
-        metadata: typing.Literal[True] = ...,
+        metadata: Literal[True] = ...,
     ) -> tuple[tuple[Tensor, Tensor], pl.DataFrame]:
         ...
 
@@ -89,32 +95,22 @@ class TensorGenerator(IterableDataset[tuple[Tensor, Tensor]]):
             img_id = self.image_ids[img_id]
 
         x = np.array(self.data[img_id, img_type or self.x_img_types])
-        y = np.array(self.data[img_id, self.y_img_types])
+        y = np.array(self.data[img_id, img_type or self.y_img_types])
         values = torch.from_numpy(x), torch.from_numpy(y)
         if metadata is True:
             return (values, self.meta.data.filter(self.meta.id == img_id))
         return values
 
-    @typing.overload  # type: ignore[misc]
-    def iter_batches(
-        self,
-        *,
-        metadata: typing.Literal[False] = ...,
-    ) -> Iterator[tuple[Tensor, Tensor]]:
+    @overload  # type: ignore[misc]
+    def iter_batches(self, *, metadata: Literal[False] = ...) -> Iterator[tuple[Tensor, Tensor]]:
         ...
 
-    @typing.overload
-    def iter_batches(
-        self,
-        *,
-        metadata: typing.Literal[True] = ...,
-    ) -> Iterator[tuple[tuple[Tensor, Tensor], pl.DataFrame]]:
+    @overload
+    def iter_batches(self, *, metadata: Literal[True] = ...) -> Iterator[tuple[tuple[Tensor, Tensor], pl.DataFrame]]:
         ...
 
     def iter_batches(
-        self,
-        *,
-        metadata: bool = False,
+        self, *, metadata: bool = False
     ) -> Iterator[tuple[Tensor, Tensor]] | Iterator[tuple[tuple[Tensor, Tensor], pl.DataFrame]]:
         bar = tqdm.tqdm(total=len(self.image_ids))
         for img_id in self.image_ids:
@@ -148,7 +144,7 @@ class TensorGenerator(IterableDataset[tuple[Tensor, Tensor]]):
 
 
 class TensorLoader(DataLoader[tuple[Tensor, Tensor]]):
-    if typing.TYPE_CHECKING:
+    if TYPE_CHECKING:
         dataset: TensorGenerator
 
     def __init__(
@@ -159,11 +155,11 @@ class TensorLoader(DataLoader[tuple[Tensor, Tensor]]):
         sampler: Sampler | Iterable | None = None,
         batch_sampler: Sampler[Sequence] | Iterable[Sequence] | None = None,
         num_workers: int = 0,
-        collate_fn: typing.Callable[[list[tuple[Tensor, Tensor]]], typing.Any] | None = None,
+        collate_fn: Callable[[list[tuple[Tensor, Tensor]]], Any] | None = None,
         pin_memory: bool = False,
         drop_last: bool = False,
         timeout: float = 0,
-        worker_init_fn: typing.Callable[[int], None] | None = None,
+        worker_init_fn: Callable[[int], None] | None = None,
         multiprocessing_context=None,
         generator=None,
         *,
@@ -206,7 +202,7 @@ def main(
 ) -> None:
     logging.info(
         f"""\
-⛈️  SEVIRLoader Example ⛈️
+⛈️ TensorGenerator Example ⛈️
 {VIL=}
 {IR_069=}
 {IR_107=}

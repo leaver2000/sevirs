@@ -97,7 +97,7 @@ class Catalog(PolarsAdapter):
 
     # - Properties
     @property
-    def id(self) -> pl.Series:  # noqa
+    def id(self) -> pl.Series:  # noqa: A003
         return self.data[ID]
 
     @property

@@ -1,6 +1,4 @@
-"""
-A mix of abstract base classes and generic adapters for various data structures.
-"""
+"""A mix of Abstract Base Classes and Generic Data Adapters for various data structures."""
 from __future__ import annotations
 
 import abc
@@ -80,8 +78,7 @@ class GenericDataManager(Generic[_T]):
         return self._data
 
 
-# =====================================================================================================================
-# - Generic Adapters [Arrays, Series, Tensors, DataFrames, etc.]
+# - Generic Adapters [NDArrays, Series, Tensors, DataFrames, etc.]
 class GenericDataAdapter(GenericDataManager[_ShapeProto_T]):
     if TYPE_CHECKING:
         _repr_meta_: Optional[Any]
@@ -97,7 +94,7 @@ class GenericDataAdapter(GenericDataManager[_ShapeProto_T]):
 
     def __repr__(self) -> str:
         repr_meta = getattr(self, "_repr_meta_") or "..."
-        return f"{self.__class__.__name__}[{repr_meta}] {repr(self._data)}"
+        return f"{self.__class__.__name__}[{repr_meta}]\n{repr(self._data)}"
 
     def _repr_html_(self) -> str:
         html = getattr(self._data, "_repr_html_", lambda: f"<pre>{repr(self._data)}</pre>")
