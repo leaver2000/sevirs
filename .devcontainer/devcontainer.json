@@ -1,0 +1,64 @@
+{
+	"name": "sevir",
+	"build": {
+		"dockerfile": "../Dockerfile",
+		"context": "..",
+		"args": {
+			// Options
+			// "NODE_VERSION": "lts/*"
+		}
+	},
+	// Configure tool-specific properties.
+	"customizations": {
+		// Configure properties specific to VS Code.
+		"vscode": {
+			// Set *default* container specific settings.json values on container create.
+			"settings": {
+				// python
+				"python.defaultInterpreterPath": "/opt/venv/bin/python",
+				"[python]": {
+					"editor.defaultFormatter": "ms-python.black-formatter",
+					"editor.formatOnSave": true
+				},
+				"ruff.args": [],
+				"ruff.path": [
+					"/opt/venv/bin/ruff"
+				],
+				"vsicons.associations.folders": [
+					{
+						"icon": "python",
+						"extensions": [
+							"notebooks"
+						],
+						"format": "svg",
+						"overrides": "ipynb"
+					}
+				]
+			},
+			// Add the IDs of extensions you want installed when the container is created.
+			"extensions": [
+				"ms-python.isort",
+				"ms-python.python",
+				"ms-python.flake8",
+				"ms-toolsai.jupyter",
+				"ms-python.vscode-pylance",
+				"ms-python.black-formatter",
+				"ms-python.mypy-type-checker",
+				"charliermarsh.ruff",
+				"oderwat.indent-rainbow",
+				"vscode-icons-team.vscode-icons"
+			]
+		}
+	},
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": []
+	"runArgs": [
+		"--gpus=all"
+	],
+	// development path options
+	"remoteEnv": {
+		"PYTHONPATH": "/workspaces/sevir/:${containerEnv:PYTHONPATH}:",
+		"JUPYTER_PATH": "/workspaces/sevir/:${containerEnv:JUPYTER_PATH}"
+	},
+	"remoteUser": "vscode"
+}

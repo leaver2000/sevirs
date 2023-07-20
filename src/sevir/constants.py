@@ -36,13 +36,12 @@ LIGHTNING_COLUMNS = FLASH_TIME, FLASH_LAT, FLASH_LON, FLASH_X, FLASH_Y = cast_li
 | 3 | Flash X coordinate when converting to raster |
 | 4 | Flash Y coordinate when converting to raster |
 
-# Lightning Data
-# The lght data is the only non-raster type in SEVIR (currently).
-# This data is stored in the HDF using the SEVIR id as a key.
-# Associated to each id is an N x 5 matrix describing each 4 hour event.
-# Each row of this matrix represents a single lightning flash identified by
-# the GOES-16 GLM sensor. The columns of this matrix are described in the following table:
-
+Lightning Data
+The lght data is the only non-raster type in SEVIR (currently).
+This data is stored in the HDF using the SEVIR id as a key.
+Associated to each id is an N x 5 matrix describing each 4 hour event.
+Each row of this matrix represents a single lightning flash identified by
+the GOES-16 GLM sensor. The columns of this matrix are described in the following table:
 """
 
 # - Catalog Columns

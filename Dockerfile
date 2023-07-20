@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
 
 # Description:
-# MultiStage Dockerfile for working with the SEVIR and other atmospheric
+# Multistage Dockerfile for working with the SEVIR dataset and other atmospheric
 # data formats for analysis, processing, and Machine Learning.
 
 # Example:
 # - docker build -t $USER/sevir . 
 # - docker run -it -p 8888:8888 --gpus all --volume $PATH_TO_SEVIR:/home/vscode $USER/sevir
 
-FROM  nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04 AS base
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04 AS base
 USER root
 
 WORKDIR /
@@ -104,7 +104,7 @@ RUN apt-get update -y \
     python3.10-dev \
     && rm -rf /var/lib/apt/lists/*
 # hadolint ignore=DL3013
-RUN python3.10 -m pip install --upgrade pip && python3.10 -m pip install --no-cache-dir \
+RUN python3.10 -m pip install --upgrade pip --no-cache-dir && python3.10 -m pip install --no-cache-dir \
     Cartopy==0.21.1 \
     matplotlib==3.7.2
 
@@ -119,47 +119,30 @@ ARG USERNAME=vscode
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 
-WORKDIR /
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+WORKDIR /tmp/sevir
+SHELL ["/bin/bash","-c"]
+# hadolint ignore=DL3008
 RUN groupadd --gid $USER_GID $USERNAME \
     && useradd -s /bin/bash --uid $USER_UID --gid $USER_GID -m $USERNAME \
-    && apt-get update \
-    && apt-get install -y sudo \
-    && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
-    && chmod 0440 /etc/sudoers.d/$USERNAME \
-    # clean up
-    && apt-get autoremove -y \
-    && apt-get clean -y \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=cartopy --chown=$USER_UID:$USER_GID /opt/venv /opt/venv
-RUN chown -R $USER_UID:$USER_GID /opt/venv
+    && chown -R $USER_UID:$USER_GID /opt/venv
 
 ENV ECCODES_DIR=/usr/include/eccodes
 COPY --from=eccodes --chown=$USER_UID:$USER_GID $ECCODES_DIR $ECCODES_DIR
-
-WORKDIR /tmp/sevir
-SHELL ["/bin/bash","-c"]
-# - install requirements that arnt in the requirements.txt and torch for caching
+COPY --from=cartopy --chown=$USER_UID:$USER_GID /opt/venv /opt/venv
+# - install requirements that arn't in the requirements.txt and torch for caching
 RUN python3.10 -m pip install --no-cache-dir \
     torch==2.0.1 \
     cfgrib==0.9.10.4 \
     notebook==6.5.4 \
-    eccodes==1.6.0 \
-    && rm -rf /tmp/* \
-    && rm -rf /var/lib/apt/lists/*
+    eccodes==1.6.0 
 # - install the requirements.txt
-COPY requirements.txt .
-RUN python3.10 -m pip install --no-cache-dir -r requirements.txt \
-    && rm -rf /tmp/* \
-    && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt requirements.txt
+RUN python3.10 -m pip install --no-cache-dir -r requirements.txt 
 # - install the package
 COPY src/ src/
-COPY setup.py .
-COPY pyproject.toml .
-RUN python3.10 -m pip install . --no-cache-dir \
-    && rm -rf /tmp/* \
-    && rm -rf /var/lib/apt/lists/*
+COPY setup.py setup.py
+COPY pyproject.toml pyproject.toml
+RUN python3.10 -m pip install . --no-cache-dir && rm -rf /tmp/*
 
 USER $USERNAME
 ARG HOME=/home/$USERNAME
