@@ -16,18 +16,14 @@
 			"settings": {
 				// python
 				"python.defaultInterpreterPath": "/opt/venv/bin/python",
-				// "python.linting.enabled": true,
-				// "python.linting.pylintEnabled": true,
-				// "python.formatting.provider": "black",
-				// "python.formatting.blackPath": "/opt/venv/bin/black",
-				// "python.linting.flake8Path": "/opt/venv/bin/flake8",
-				// "python.linting.mypyPath": "/opt/venv/bin/mypy",
-				// "python.linting.pylintPath": "/opt/venv/pylint",
-				// 
 				"[python]": {
 					"editor.defaultFormatter": "ms-python.black-formatter",
 					"editor.formatOnSave": true
 				},
+				"ruff.args": [],
+				"ruff.path": [
+					"/opt/venv/bin/ruff"
+				],
 				"vsicons.associations.folders": [
 					{
 						"icon": "python",
@@ -41,19 +37,15 @@
 			},
 			// Add the IDs of extensions you want installed when the container is created.
 			"extensions": [
-				// python
+				"ms-python.isort",
 				"ms-python.python",
-				"ms-python.vscode-pylance",
+				"ms-python.flake8",
 				"ms-toolsai.jupyter",
-				// linting
-				"mikestead.dotenv",
-				"redhat.vscode-yaml",
-				"bungcip.better-toml",
-				"shanoor.vscode-nginx",
+				"ms-python.vscode-pylance",
+				"ms-python.black-formatter",
+				"ms-python.mypy-type-checker",
+				"charliermarsh.ruff",
 				"oderwat.indent-rainbow",
-				// git
-				"eamodio.gitlens",
-				// vscode
 				"vscode-icons-team.vscode-icons"
 			]
 		}
