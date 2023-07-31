@@ -15,15 +15,16 @@ WORKDIR /
 SHELL ["/bin/bash","-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
-    python3.10=3.10.6* \
-    python3.10-venv=3.10.6* \
-    libgeos3.10.2=3.10.2* \
-    libgdal30=3.4.1* \
+    python3.10 \
+    python3.10-venv \
+    libgeos3.10.2 \
+    libgdal30 \
     && rm -rf /var/lib/apt/lists/* \
     && python3.10 -m venv /opt/venv
 
 ENV PATH="/opt/venv/bin:$PATH"
 USER 1001
+
 # =====================================================================================================================
 # Compiler Stage; this will be omitted from the final image
 # =====================================================================================================================
@@ -135,10 +136,7 @@ RUN python3.10 -m pip install --no-cache-dir \
     cfgrib==0.9.10.4 \
     notebook==6.5.4 \
     eccodes==1.6.0 
-# - install the requirements.txt
-COPY requirements.txt requirements.txt
-RUN python3.10 -m pip install --no-cache-dir -r requirements.txt 
-# - install the package
+# - install the package and dependencies
 COPY src/ src/
 COPY setup.py setup.py
 COPY pyproject.toml pyproject.toml

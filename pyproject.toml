@@ -4,10 +4,7 @@
 # setup.cfg or other tool-specific files.
 # https://github.com/carlosperate/awesome-pyproject
 [build-system]
-requires = [
-    "setuptools>=58.2.0", 
-    "wheel", 
-]
+requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -15,9 +12,7 @@ name = "sevir"
 version = "0.0.1"
 requires-python = ">=3.10"
 description = "Interface to SEVIR dataset"
-authors = [
-    {name = "Jason Leaver", email = "jason.leaver@us.af.mil"},
-]
+authors = [{ name = "Jason Leaver", email = "jason.leaver@us.af.mil" }]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -30,6 +25,28 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Topic :: Utilities",
 ]
+dependencies = [
+    "torch==2.0.1",
+    "numpy==1.25.1",
+    "polars==0.18.7",
+    "pyarrow==12.0.1",
+    "h5py==3.9.0",
+    "pandas==2.0.3",
+    "tqdm==4.65.0",
+    "typing_extensions==4.7.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy",
+    "mypy-extensions",
+    "typing_extensions",
+    "pyarrow-stubs",
+    "pytest",
+    "ruff",
+    "black",
+    "isort",
+]
 
 [tool.setuptools]
 include-package-data = true
@@ -40,18 +57,12 @@ where = ["src/"]
 [tool.setuptools.package-data]
 sevir = ["py.typed"]
 
-[tool.setuptools.dynamic.dependencies]
-file = ["requirements.txt"]
-
-[tool.setuptools.dynamic.optional-dependencies]
-dev = { file = ["requirements.txt", "tests/requirements.txt"] }
-
 [tool.pytest]
 testpaths = ["tests/"]
 
 [tool.coverage.run]
 branch = true
-omit = ["src/_typing.py"]
+omit = ["src/sevir/_typing.py"]
 source = ["src/"]
 
 [tool.coverage.report]
@@ -94,9 +105,9 @@ target-version = "py310"
 line-length = 119
 fix = true
 ignore = [
-    "E731",  # do not assign a lambda expression, use a def
-    "E402",  # module level import not at top of file
-    "E402",  # module level import not at top of file
-    "E501",  # line too long
+    "E731", # do not assign a lambda expression, use a def
+    "E402", # module level import not at top of file
+    "E402", # module level import not at top of file
+    "E501", # line too long
     "E741", # do not use variables named 'l', 'O', or 'I'
 ]

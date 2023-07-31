@@ -1,8 +1,0 @@
-torch==2.0.1
-numpy==1.25.1
-polars==0.18.7
-pyarrow==12.0.1
-h5py==3.9.0
-pandas==2.0.3
-tqdm==4.65.0
-typing_extensions==4.7.1

@@ -1,8 +1,0 @@
-mypy
-mypy-extensions
-typing_extensions
-pyarrow-stubs
-pytest
-ruff
-black
-isort
