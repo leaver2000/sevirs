@@ -101,7 +101,7 @@ slice
 )"""
 LocIndexerType: TypeAlias = """(
     int
-    | ColumnIndexerType[HashableT]
+    | ColumnIndexerType
     | tuple[
         IndexType | MaskType | list[HashableT] | slice | _IndexSliceTuple | Callable,
         list[HashableT] | slice | pd.Series[bool] | Callable
