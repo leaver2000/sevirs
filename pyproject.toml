@@ -39,14 +39,38 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "mypy",
-    "mypy-extensions",
-    "typing_extensions",
-    "pyarrow-stubs",
     "pytest",
     "ruff",
     "black",
     "isort",
+    "mypy-extensions",
+    "pyarrow-stubs",
 ]
+ipynb = ["ipykernel", "black", "jupyter-black"]
+all = [
+    # dev tools
+    "mypy",
+    "pytest",
+    "ruff",
+    "black",
+    "isort",
+    "types-tqdm",
+    "mypy-extensions",
+    "pyarrow-stubs",
+    "pandas-stubs",
+    # "jupyter"
+    "ipykernel",
+    "black",
+    "jupyter-black",
+]
+
+[tool.mypy]
+python_version = "3.10"
+# warn_unused_configs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+ignore_missing_imports = true
+enable_incomplete_feature = "TypeVarTuple,Unpack"
 
 [tool.setuptools]
 include-package-data = true
@@ -83,14 +107,6 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
 ]
-
-[tool.mypy]
-python_version = "3.10"
-warn_unused_configs = true
-warn_unused_ignores = true
-warn_redundant_casts = true
-ignore_missing_imports = true
-enable_incomplete_feature = "TypeVarTuple,Unpack"
 
 [tool.black]
 target-version = ['py310']
