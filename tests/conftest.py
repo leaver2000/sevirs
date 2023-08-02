@@ -1,6 +1,6 @@
 import os
 
-os.environ["PATH_TO_SEVIR"] = "/mnt/nuc/c/sevir"
+os.environ["PATH_TO_SEVIR"] = "/mnt/data/c/sevir"
 
 import pytest
 from sevir.catalog import Catalog

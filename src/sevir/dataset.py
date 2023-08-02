@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import os
 import random
 from typing import (
     TYPE_CHECKING,
@@ -16,54 +15,64 @@ from typing import (
     overload,
 )
 
-import numpy as np
 import polars as pl
-import torch
 import tqdm
 from torch import Tensor
 from torch.utils.data import DataLoader, IterableDataset, Sampler
 
 from .catalog import Catalog
-from .constants import IR_069, IR_107, LGHT, VIL, VIS, ImageType
+from .constants import (
+    DEFAULT_CATALOG,
+    DEFAULT_DATA,
+    DEFAULT_PATH_TO_SEVIR,
+    IR_069,
+    IR_107,
+    LGHT,
+    VIL,
+    VIS,
+    ImageType,
+)
+from .generic import AbstractContextManager
 from .h5 import H5Store
 
 logging.getLogger().setLevel(logging.INFO)
 
 
-class TensorGenerator(IterableDataset[tuple[Tensor, Tensor]]):
-    __slots__ = ("data", "image_ids", "x_img_types", "y_img_types", "x", "y")
+class TensorGenerator(IterableDataset[tuple[Tensor, Tensor]], AbstractContextManager["TensorGenerator"]):
+    __slots__ = ("image_ids", "x", "y", "x_img_types", "y_img_types")
     if TYPE_CHECKING:
-        data: Final[H5Store]
         image_ids: Final[list[str]]
         x_img_types: Final[list[ImageType]]
         y_img_types: Final[list[ImageType]]
-        x: Final[Catalog]
-        y: Final[Catalog]
+        x: Final[H5Store]
+        y: Final[H5Store]
 
     def __init__(
         self,
-        sevir: Catalog | str,
+        data: Catalog | str = DEFAULT_PATH_TO_SEVIR,
         *,
-        inputs: Iterable[ImageType],
-        features: Iterable[ImageType],
-        catalog: str | None = None,
-        data_dir: str | None = None,
-        nproc: int | None = os.cpu_count(),
+        inputs: tuple[ImageType, ...],
+        features: tuple[ImageType, ...],
+        catalog: str = DEFAULT_CATALOG,
+        data_dir: str = DEFAULT_DATA,
     ) -> None:
         super().__init__()
-        image_set = set(inputs).union(features)
-        self.meta = meta = (
-            sevir
-            if isinstance(sevir, Catalog)
-            else Catalog(sevir, img_types=image_set, catalog=catalog, data_dir=data_dir)
+
+        img_types = inputs + features
+        if len(set(img_types)) != len(img_types):
+            raise ValueError("inputs and features must be unique")
+        data = (
+            data
+            if isinstance(data, Catalog)
+            else Catalog(data, img_types=img_types, catalog=catalog, data_dir=data_dir)
         )
 
-        self.x, self.y = x, y = meta.split_by_types(list(inputs), list(features))
-        self.image_ids = meta.id.unique().to_list()
-        self.x_img_types, self.y_img_types = list(x.image_set), list(y.image_set)
-        assert meta.id.n_unique() == x.id.n_unique() == y.id.n_unique()
-        assert len(x.image_set) + len(y.image_set) == len(image_set)
-        self.data = H5Store(meta, nproc=nproc)
+        self.image_ids = data.id.unique().to_list()
+        self.x, self.y = x, y = [H5Store(cat) for cat in data.split_by_types(list(inputs), list(features))]
+
+        assert data.id.n_unique() == x.catalog.id.n_unique() == y.catalog.id.n_unique()
+        assert len(img_types) == (len(x.catalog.types) + len(y.catalog.types))
+        self.x_img_types, self.y_img_types = list(x.catalog.types), list(y.catalog.types)
 
     @overload  # type: ignore[misc]
     def get_batch(
@@ -89,16 +98,16 @@ class TensorGenerator(IterableDataset[tuple[Tensor, Tensor]]):
         img_type: list[ImageType] | None = None,
         metadata: bool = False,
     ) -> tuple[Tensor, Tensor] | tuple[tuple[Tensor, Tensor], pl.DataFrame]:
-        if img_id is None:
-            img_id = random.choice(self.image_ids)
-        if isinstance(img_id, int):
-            img_id = self.image_ids[img_id]
+        #
+        if img_id is None or isinstance(img_id, int):
+            img_id = self.image_ids[img_id] if img_id is not None else random.choice(self.image_ids)
 
-        x = np.array(self.data[img_id, img_type or self.x_img_types])
-        y = np.array(self.data[img_id, img_type or self.y_img_types])
-        values = torch.from_numpy(x), torch.from_numpy(y)
+        x = self.x.get_batch(img_id, img_types=self.x_img_types)  # [img_id, img_type or self.x_img_types])
+        y = self.y.get_batch(img_id, img_types=self.y_img_types)
+        # return x, y
+        values = x, y  # torch.from_numpy(x), torch.from_numpy(y)
         if metadata is True:
-            return (values, self.meta.data.filter(self.meta.id == img_id))
+            return (values, self.x.catalog.data.filter(self.x.catalog.id == img_id))
         return values
 
     @overload  # type: ignore[misc]
@@ -119,8 +128,9 @@ class TensorGenerator(IterableDataset[tuple[Tensor, Tensor]]):
         bar.close()
 
     def close(self) -> None:
-        logging.info("Closing SEVIRstoreHDF5")
-        self.data.close()
+        logging.info("Closing Store")
+        self.x.close()
+        self.y.close()
 
     @contextlib.contextmanager
     def session(self):
@@ -133,14 +143,14 @@ class TensorGenerator(IterableDataset[tuple[Tensor, Tensor]]):
         return self.get_batch(index)
 
     def __iter__(self) -> Iterator[tuple[Tensor, Tensor]]:
-        try:
-            for img_id in self.image_ids:
-                yield self.get_batch(img_id)
+        # try:
+        for img_id in self.image_ids:
+            yield self.get_batch(img_id)
 
-        except KeyboardInterrupt:
-            logging.info("KeyboardInterrupt")
-            self.close()
-            raise StopIteration
+        # except KeyboardInterrupt:
+        #     logging.info("KeyboardInterrupt")
+        #     self.close()
+        #     raise StopIteration
 
 
 class TensorLoader(DataLoader[tuple[Tensor, Tensor]]):
@@ -194,11 +204,11 @@ class TensorLoader(DataLoader[tuple[Tensor, Tensor]]):
 
 
 def main(
-    sevir="/mnt/nuc/c/sevir",
+    sevir="/mnt/data/c/sevir",
     data_dir: str = "data",
     catalog: str = "CATALOG.csv",
-    inputs={IR_069, IR_107},
-    features={VIL},
+    inputs=(IR_069, IR_107),
+    features=(VIL,),
 ) -> None:
     logging.info(
         f"""\
@@ -215,7 +225,7 @@ def main(
     ).session() as generator:
         i = 0
         for (l, r), df in generator.iter_batches(metadata=True):
-            print(df, l.shape, r.shape, sep="\n")
+            print(df, l, r, sep="\n")
             if i > 10:
                 break
             i += 1

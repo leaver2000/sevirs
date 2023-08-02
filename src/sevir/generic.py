@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import abc
+import contextlib
 from typing import (
     TYPE_CHECKING,
     Any,
     Final,
     Generic,
-    Optional,
+    Iterable,
     Protocol,
     TypeAlias,
     TypeVar,
@@ -18,6 +19,7 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import pyarrow as pa
+from polars.type_aliases import IntoExpr
 from typing_extensions import Self
 
 # =====================================================================================================================
@@ -63,16 +65,16 @@ class GenericDataManager(Generic[_T]):
         _data: Final[_T]  # type: ignore[misc]
 
     # - Constructors
-    def _manager(self, data: _T, inplace: bool) -> Self:
+    def _manager(self, data: _T, *, inplace: bool, **kwargs: Any) -> Self:
         if inplace:
             setattr(self, "_data", data)
-            return self
-        return self.__class__(data)
+        else:
+            self = self.__class__(data, **kwargs)
+        return self
 
     def __init__(self, data: _T) -> None:
         self._data = data
 
-    # - Properties
     @property
     def data(self) -> _T:
         return self._data
@@ -80,26 +82,22 @@ class GenericDataManager(Generic[_T]):
 
 # - Generic Adapters [NDArrays, Series, Tensors, DataFrames, etc.]
 class GenericDataAdapter(GenericDataManager[_ShapeProto_T]):
-    if TYPE_CHECKING:
-        _repr_meta_: Optional[Any]
-
     # - Properties
     @property
     def shape(self) -> tuple[int, ...]:
-        return self._data.shape
+        return self.data.shape
 
     # - Dunder Methods
     def __len__(self) -> int:
-        return len(self._data)
+        return len(self.data)
 
     def __repr__(self) -> str:
-        repr_meta = getattr(self, "_repr_meta_") or "..."
-        return f"{self.__class__.__name__}[{repr_meta}]\n{repr(self._data)}"
+        return f"[{self.__class__.__name__}]\n{repr(self.data)}"
 
     def _repr_html_(self) -> str:
-        html = getattr(self._data, "_repr_html_", lambda: f"<pre>{repr(self._data)}</pre>")
+        html = getattr(self.data, "_repr_html_", lambda: f"<pre>{repr(self.data)}</pre>")
         if not callable(html):
-            raise TypeError(f"Expected {self._data!r} to have a _repr_html_ method")
+            raise TypeError(f"Expected {self.data!r} to have a _repr_html_ method")
         return html()
 
 
@@ -108,36 +106,43 @@ class GenericDataAdapter(GenericDataManager[_ShapeProto_T]):
 class GenericFrameAdapter(GenericDataAdapter[_FrameProto_T], Generic[_FrameProto_T, _T1_co, _T2_co]):
     @property
     def columns(self) -> _T1_co:
-        return self._data.columns
+        return self.data.columns
 
     @property
     def dtypes(self) -> _T2_co:
-        return self._data.dtypes
+        return self.data.dtypes
 
 
 # these aliases are used to annotate DataFrame.__getitem__()
 # MultiRowSelector indexes into the vertical axis and
 # MultiColSelector indexes into the horizontal axis
-# NOTE: wrapping these as strings is necessary for Python <3.10
 MultiRowSelector: TypeAlias = "slice | range | list[int] | pl.Series"
 MultiColSelector: TypeAlias = "slice | range | list[int] | list[str] | list[bool] | pl.Series"
 
 
 # - polars.DataFrame
 class PolarsAdapter(GenericFrameAdapter[pl.DataFrame, list[str], list[pl.PolarsDataType]]):
-    # - Transformations
-    def to_polars(self) -> pl.DataFrame:
-        return self._data
-
-    def to_pandas(self) -> pd.DataFrame:
-        return self._data.to_pandas()
-
-    def to_arrow(self) -> pa.Table:
-        return self._data.to_arrow()
-
     # - Selection Methods
     def select(self, *columns: str) -> Self:
-        return self._manager(self._data.select(*columns), inplace=False)
+        return self._manager(self.data.select(*columns), inplace=False)
+
+    def with_columns(
+        self, *exprs: IntoExpr | Iterable[IntoExpr], inplace: bool = False, **named_exprs: IntoExpr
+    ) -> Self:
+        return self._manager(self.data.with_columns(*exprs, **named_exprs), inplace=inplace)
+
+    #    def groupby(self, by: MultiColSelector) -> Self:
+    #       return self._manager(self.data.groupby(by), inplace=False)
+
+    # - Transformations
+    def to_polars(self) -> pl.DataFrame:
+        return self.data
+
+    def to_pandas(self) -> pd.DataFrame:
+        return self.data.to_pandas()
+
+    def to_arrow(self) -> pa.Table:
+        return self.data.to_arrow()
 
     @overload
     def __getitem__(self, item: str) -> pl.Series:
@@ -183,9 +188,9 @@ class PolarsAdapter(GenericFrameAdapter[pl.DataFrame, list[str], list[pl.PolarsD
             np.bool_,
             bool,
         ):
-            data = self._data.filter(item)
+            data = self.data.filter(item)
         else:
-            data = self._data[item]  # type: ignore[assignment]
+            data = self.data[item]  # type: ignore[assignment]
 
         if isinstance(data, pl.DataFrame):
             return self._manager(data, inplace=False)
@@ -195,18 +200,18 @@ class PolarsAdapter(GenericFrameAdapter[pl.DataFrame, list[str], list[pl.PolarsD
 # - pandas.DataFrame
 class PandasAdapter(GenericFrameAdapter[pd.DataFrame, pd.Index | pd.MultiIndex, pd.Series]):
     def to_polars(self) -> pl.DataFrame:
-        return pl.from_pandas(self._data)
+        return pl.from_pandas(self.data)
 
     def to_pandas(self) -> pd.DataFrame:
-        return self._data
+        return self.data
 
     def to_arrow(self) -> pa.Table:
-        return pa.Table.from_pandas(self._data)
+        return pa.Table.from_pandas(self.data)
 
 
 # =====================================================================================================================
 # - Abstract Classes
-class AbstractDataCloser(GenericDataManager[_T], abc.ABC):
+class AbstractContextManager(contextlib.AbstractContextManager[_T]):
     """
     ```
     import io
@@ -222,9 +227,6 @@ class AbstractDataCloser(GenericDataManager[_T], abc.ABC):
     print(len(x.data))
     ```
     """
-
-    def __enter__(self) -> Self:
-        return self
 
     def __exit__(self, *_) -> None:
         self.close()

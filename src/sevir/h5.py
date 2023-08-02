@@ -1,8 +1,16 @@
 from __future__ import annotations
 
-import copy
 import logging
-from typing import TYPE_CHECKING, Final, Iterator, Literal, Mapping, TypeAlias, cast
+from typing import (
+    TYPE_CHECKING,
+    Collection,
+    Final,
+    Iterator,
+    Literal,
+    Mapping,
+    cast,
+    overload,
+)
 
 import h5py
 import numpy as np
@@ -11,11 +19,15 @@ import tqdm
 from numpy.typing import NDArray
 
 from ._typing import AnyT, Array, N, Nd
+from .catalog import AbstractCatalog, Catalog
 from .constants import (
-    DATA_INDEX,
+    DEFAULT_CATALOG,
+    DEFAULT_DATA,
     DEFAULT_FRAME_TIMES,
+    DEFAULT_PATH_TO_SEVIR,
     FILE_INDEX,
     FILE_NAME,
+    FILE_REF,
     FLASH_TIME,
     FLASH_X,
     FLASH_Y,
@@ -24,10 +36,7 @@ from .constants import (
     LGHT,
     ImageType,
 )
-
-if TYPE_CHECKING:
-    # avoid potential circular import
-    from .catalog import Catalog
+from .generic import AbstractContextManager
 
 
 def reshape_lightning_data(
@@ -92,12 +101,8 @@ class H5File(h5py.File):
         image_type: Final[ImageType]
 
     def __init__(self, filename: str, image_type: ImageType) -> None:
-        super().__init__(filename, mode="r")
         self.image_type = image_type
-
-    @property
-    def event_ids(self) -> NDArray[np.bytes_]:
-        return super().__getitem__(ID).__getitem__()[...]  # type: ignore[unused-ignore]
+        super().__init__(filename, mode="r")
 
     def __getitem__(self, __id: bytes | str, /) -> Array[Nd[N, N, N, N], np.int16]:
         img_t = self.image_type
@@ -110,104 +115,129 @@ class H5File(h5py.File):
     def get_by_file_index(self, index: int) -> Array[Nd[N, N, N, N], np.int16]:
         return self[self.event_ids[index]]
 
+    @property
+    def event_ids(self) -> NDArray[np.bytes_]:
+        return super().__getitem__(ID)[...]  # type: ignore[unused-ignore]
 
-ImageGroupIterator: TypeAlias = Iterator[tuple[tuple[str, ImageType], H5File]]
 
+class H5Store(
+    Mapping[str | bytes, list[Array[Nd[N, N, N, N], np.int16]]], AbstractCatalog, AbstractContextManager["H5Store"]
+):
+    """
+    the dataset effectively maps the following structure:
+    >>> data[FILE_REF][IMG_TYPE][EVENT_ID][FILE_INDEX, L, W, T]
+    this class aggregates the data from multiple files that can be grouped
+    by the same event_id
+    """
 
-class H5Store(Mapping[str | bytes, list[Array[Nd[N, N, N, N], np.int16]]]):
-    __slots__ = ("_data", "_dfdx", "_dbar", "_dkey")
+    __slots__ = ("catalog", "_files")
     if TYPE_CHECKING:
-        _dfdx: pl.DataFrame
-        _data: list[H5File]
-        _dbar: tqdm.tqdm
-        _dkey: set[bytes]
+        catalog: Catalog
+        _files: list[H5File]
 
     # - Initialization
-    def __init__(self, catalog: Catalog, nproc: int | None = None) -> None:
-        # validate the catalog before attempting to open files
-        required_cols = [FILE_NAME]
-        index_cols = [ID, IMG_TYPE, FILE_INDEX]
-        required_cols += index_cols
+    def __init__(self, catalog: Catalog) -> None:
+        # create a copy of the catalog and null out the reference column
+        self.catalog = cat = catalog.with_reference(None, inplace=False)
 
-        self._dfdx = df = catalog.to_polars().with_columns(**{DATA_INDEX: None})
-        if not set(df.columns).issuperset(required_cols):
-            raise ValueError(f"Catalog is missing columns: {required_cols}")
+        if not set(cat.columns).issuperset([FILE_NAME, ID, IMG_TYPE, FILE_INDEX]):
+            raise ValueError(f"Catalog is missing columns: {[FILE_NAME, ID, IMG_TYPE, FILE_INDEX]}")
 
-        logging.info(f"Loading {df[FILE_NAME].n_unique()} files with {df[IMG_TYPE].n_unique()} image types.")
-        self._data = []
-        self._dkey = set(df[ID])
-        self._dbar = tqdm.tqdm(total=df[FILE_NAME].n_unique())
+        logging.info(f"Loading {cat.file_name.n_unique()} files with {cat.image_types.n_unique()} image types.")
+        self._files = []
 
-        for (f_name, img_t), _ in self.iter_groups():
-            self._dfdx = df = self._dfdx.with_columns(
-                pl.when(df[FILE_NAME] == f_name).then(len(self._data)).otherwise(df[DATA_INDEX]).alias(DATA_INDEX)
+        bar = tqdm.tqdm(total=cat.file_name.n_unique())
+
+        for file_n, img_t in self.iter_files():
+            cat.with_reference(
+                pl.when(cat.file_name == file_n).then(len(self._files)).otherwise(cat.file_ref).alias(FILE_REF),
+                inplace=True,
             )
-            self._data.append(H5File(f_name, img_t))
-            self._dbar.update(1)
-        # TODO: need to create a Thread Safe object to store the file ref in.
-        # if nproc is None:
-        #
-        # else:
-        #     with multiprocessing.pool.ThreadPool(nproc) as pool:
-        #         pool.starmap(self._load_dataframe_index, self.iter_groups())
+            self._files.append(H5File(file_n, img_t))
 
-        self._dbar.close()
+            bar.update(1)
+        bar.close()
 
-    def _load_dataframe_index(self, group: tuple[str, ImageType], df: pl.DataFrame) -> None:
-        """
-        instead of putting the files into the dataframe, a reference to the index of the file in the list is stored
-        in the DataFrame Index `dfdx`
-        """
-        f_name, img_t = group
-        self._dfdx = df.with_columns(
-            pl.when(df[FILE_NAME] == f_name).then(len(self._data)).otherwise(df[DATA_INDEX]).alias(DATA_INDEX)
-        )
-        self._data.append(H5File(f_name, img_t))
-        self._dbar.update(1)
+    @classmethod
+    def from_disk(
+        cls,
+        data: str = DEFAULT_PATH_TO_SEVIR,
+        *,
+        img_types: tuple[ImageType, ...] | None = None,
+        catalog: str | None = DEFAULT_CATALOG,
+        data_dir: str | None = DEFAULT_DATA,
+    ) -> H5Store:
+        return cls(Catalog(data, img_types=img_types, catalog=catalog, data_dir=data_dir))
 
-    def iter_groups(self) -> ImageGroupIterator:
-        columns = pl.col(FILE_NAME), pl.col(IMG_TYPE), pl.col(DATA_INDEX)
-        return cast(ImageGroupIterator, iter(self.index.select(columns).groupby(by=[FILE_NAME, IMG_TYPE])))
-
-    # - Properties
+    # - AbstractCatalog interface
     @property
-    def index(self) -> pl.DataFrame:
-        return self._dfdx
+    def data(self) -> pl.DataFrame:
+        return self.catalog.data
 
     @property
-    def data(self) -> list[H5File]:
-        return copy.copy(self._data)
+    def types(self) -> tuple[ImageType, ...]:
+        return self.catalog.types
 
     # - Mapping interface
-    def __getitem__(
-        self, __idx: str | bytes | tuple[str | bytes, list[ImageType]]
-    ) -> list[Array[Nd[N, N, N, N], np.int16]]:
-        if isinstance(__idx, tuple):
-            __idx, image_ids = __idx
-        else:
-            image_ids = None
-        if isinstance(__idx, bytes):
-            __idx = __idx.decode("utf-8")
-
-        di_fi = self.index.filter(
-            self.index[ID] == __idx
-            if image_ids is None
-            else (self.index[ID] == __idx) & (self.index[IMG_TYPE].is_in(image_ids))
-        )
-        return [
-            self._data[di][__idx][fi : fi + 1, :, :, :]
-            for di, fi in di_fi.select(pl.col(DATA_INDEX), pl.col(FILE_INDEX)).iter_rows()
-        ]
+    def __getitem__(self, id_: str | bytes) -> list[Array[Nd[N, N, N, N], np.int16]]:
+        return self.get_batch(id_)
 
     def __iter__(self) -> Iterator[bytes]:
-        return iter(self._dkey)
+        return iter(set(self.catalog.id))
 
     def __len__(self) -> int:
-        return len(self._data)
+        return len(self._files)
 
     # - Methods
+    @overload  # type: ignore[misc]
+    def get_batch(
+        self, id_: str | bytes, *, img_types: Collection[ImageType] | None = None, metadata: Literal[False] = False
+    ) -> list[Array[Nd[N, N, N, N], np.int16]]:
+        ...
+
+    @overload
+    def get_batch(
+        self, id_: str | bytes, *, img_types: Collection[ImageType] | None = None, metadata: Literal[True] = True
+    ) -> tuple[list[Array[Nd[N, N, N, N], np.int16]], pl.DataFrame]:
+        ...
+
+    def get_batch(
+        self, id_: str | bytes, *, img_types: Collection[ImageType] | None = None, metadata: bool = False
+    ) -> list[Array[Nd[N, N, N, N], np.int16]] | tuple[list[Array[Nd[N, N, N, N], np.int16]], pl.DataFrame]:
+        if isinstance(id_, bytes):
+            id_ = id_.decode("utf-8")
+
+        batch = [
+            self._files[fref][id_][fidx : fidx + 1, :, :, :]
+            for fref, fidx in self.iter_indices(id_, img_types=img_types)
+        ]
+        if metadata:
+            return batch, self.data.filter(self.id == id_)
+
+        return batch
+
+    def iter_files(self) -> Iterator[tuple[str, ImageType]]:
+        columns = pl.col(FILE_NAME), pl.col(IMG_TYPE)
+        df = self.data.select(columns)
+        return df.unique(subset=FILE_NAME).iter_rows()
+
+    def iter_indices(self, id_: str, *, img_types: Collection[ImageType] | None = None) -> Iterator[tuple[int, int]]:
+        """returns an iterator of (file_ref, file_index) tuples for the given id and image types"""
+        img_types = img_types or self.types
+        columns = pl.col(IMG_TYPE), pl.col(FILE_REF), pl.col(FILE_INDEX)
+        df = self.data.select(columns)
+        return (
+            df.filter((self.catalog.id == id_) & (self.image_types.is_in(img_types)))
+            .sort(pl.col(IMG_TYPE).map_dict({t: i for i, t in enumerate(img_types)}), descending=False)
+            .drop(IMG_TYPE)
+            .iter_rows()  # type: ignore[return-value]
+        )
+
     def close(self) -> None:
-        for f in self._data:
+        for f in self._files:
             f.close()
-        self._data.clear()
-        self._dfdx = self._dfdx.with_columns(**{DATA_INDEX: None})
+        self._files.clear()
+        self.catalog.close()
+
+    def is_closed(self) -> bool:
+        return len(self._files) == 0

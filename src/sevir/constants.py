@@ -1,3 +1,4 @@
+import json
 import os
 from typing import Literal
 
@@ -5,14 +6,15 @@ import numpy as np
 
 from ._typing import cast_literal_list
 
-DATA_INDEX = "data_index"
 DEFAULT_PATH_TO_SEVIR = os.getenv("PATH_TO_SEVIR", None) or os.path.abspath(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_CATALOG = "CATALOG.csv"
 DEFAULT_DATA = "data"
-
 # - Lightning Data
 DEFAULT_N_FRAMES = 49  # TODO:  don't hardcode this
 # Nominal Frame time offsets in minutes (used for non-raster types)
+# the previous color maps and boundaries we moved to a json file
+with open(os.path.join(os.path.dirname(__file__), "config.json"), "r") as f:
+    CONFIG = json.load(f)
 
 DEFAULT_FRAME_TIMES = np.arange(-120.0, 125.0, 5) * 60  # in seconds
 """The lightning flashes in each from will represent the 5 minutes leading up the
@@ -43,7 +45,6 @@ Associated to each id is an N x 5 matrix describing each 4 hour event.
 Each row of this matrix represents a single lightning flash identified by
 the GOES-16 GLM sensor. The columns of this matrix are described in the following table:
 """
-
 # - Catalog Columns
 CatalogColumn = Literal[
     "id",
@@ -97,7 +98,8 @@ CATALOG_BOUNDING_BOX: list[CatalogColumn] = [
     UR_LAT,
     UR_LON,
 ]
-
+# one additional column for tracking file references
+FILE_REF = "file_ref"
 
 # - Image Types
 ImageType = Literal[
