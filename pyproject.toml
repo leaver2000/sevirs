@@ -4,10 +4,7 @@
 # setup.cfg or other tool-specific files.
 # https://github.com/carlosperate/awesome-pyproject
 [build-system]
-requires = [
-    "setuptools>=58.2.0", 
-    "wheel", 
-]
+requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -15,9 +12,7 @@ name = "sevir"
 version = "0.0.1"
 requires-python = ">=3.10"
 description = "Interface to SEVIR dataset"
-authors = [
-    {name = "Jason Leaver", email = "jason.leaver@us.af.mil"},
-]
+authors = [{ name = "Jason Leaver", email = "jason.leaver@us.af.mil" }]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -30,6 +25,52 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Topic :: Utilities",
 ]
+dependencies = [
+    "torch==2.0.1",
+    "numpy==1.25.1",
+    "polars==0.18.7",
+    "pyarrow==12.0.1",
+    "h5py==3.9.0",
+    "pandas==2.0.3",
+    "tqdm==4.65.0",
+    "typing_extensions==4.7.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy",
+    "pytest",
+    "ruff",
+    "black",
+    "isort",
+    "mypy-extensions",
+    "pyarrow-stubs",
+]
+ipynb = ["ipykernel", "black", "jupyter-black"]
+all = [
+    # dev tools
+    "mypy",
+    "pytest",
+    "ruff",
+    "black",
+    "isort",
+    "types-tqdm",
+    "mypy-extensions",
+    "pyarrow-stubs",
+    "pandas-stubs",
+    # "jupyter"
+    "ipykernel",
+    "black",
+    "jupyter-black",
+]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_ignores = true
+warn_redundant_casts = true
+ignore_missing_imports = true
+enable_incomplete_feature = "TypeVarTuple,Unpack"
+exclude = ["docs/"]
 
 [tool.setuptools]
 include-package-data = true
@@ -38,20 +79,14 @@ include-package-data = true
 where = ["src/"]
 
 [tool.setuptools.package-data]
-sevir = ["py.typed"]
-
-[tool.setuptools.dynamic.dependencies]
-file = ["requirements.txt"]
-
-[tool.setuptools.dynamic.optional-dependencies]
-dev = { file = ["requirements.txt", "tests/requirements.txt"] }
+sevir = ["py.typed", "config.json"]
 
 [tool.pytest]
 testpaths = ["tests/"]
 
 [tool.coverage.run]
 branch = true
-omit = ["src/_typing.py"]
+omit = ["src/sevir/_typing.py"]
 source = ["src/"]
 
 [tool.coverage.report]
@@ -73,14 +108,6 @@ exclude_lines = [
     "if TYPE_CHECKING:",
 ]
 
-[tool.mypy]
-python_version = "3.10"
-warn_unused_configs = true
-warn_unused_ignores = true
-warn_redundant_casts = true
-ignore_missing_imports = true
-enable_incomplete_feature = "TypeVarTuple,Unpack"
-
 [tool.black]
 target-version = ['py310']
 line-length = 119
@@ -94,9 +121,9 @@ target-version = "py310"
 line-length = 119
 fix = true
 ignore = [
-    "E731",  # do not assign a lambda expression, use a def
-    "E402",  # module level import not at top of file
-    "E402",  # module level import not at top of file
-    "E501",  # line too long
+    "E731", # do not assign a lambda expression, use a def
+    "E402", # module level import not at top of file
+    "E402", # module level import not at top of file
+    "E501", # line too long
     "E741", # do not use variables named 'l', 'O', or 'I'
 ]

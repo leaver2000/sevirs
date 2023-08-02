@@ -32,14 +32,22 @@ from typing import (
     get_args,
 )
 
-if sys.version_info < (3, 11):
-    from typing_extensions import Self, TypeVarTuple, Unpack
-else:
-    from typing import Self, Unpack, TypeVarTuple
-
 import numpy as np
 import pandas as pd
 from pandas._typing import HashableT, Scalar
+
+if sys.version_info < (3, 11):
+    from typing_extensions import Self, TypeVarTuple, Unpack
+else:
+    from typing import Self, TypeVarTuple, Unpack
+
+if TYPE_CHECKING:
+    from pandas._typing import IndexType, MaskType
+    from pandas.core.indexing import _IndexSliceTuple
+else:
+    _IndexSliceTuple = Any
+    IndexType = Any
+    MaskType = Any
 
 # =====================================================================================================================
 Ts = TypeVarTuple("Ts")
@@ -82,13 +90,6 @@ Runtime type is 'ndarray'
 
 
 # =====================================================================================================================
-if TYPE_CHECKING:
-    from pandas._typing import IndexType, MaskType
-    from pandas.core.indexing import _IndexSliceTuple
-else:
-    _IndexSliceTuple = Any
-    IndexType = Any
-    MaskType = Any
 
 
 ColumnIndexerType: TypeAlias = """(
@@ -101,7 +102,7 @@ slice
 )"""
 LocIndexerType: TypeAlias = """(
     int
-    | ColumnIndexerType[HashableT]
+    | ColumnIndexerType
     | tuple[
         IndexType | MaskType | list[HashableT] | slice | _IndexSliceTuple | Callable,
         list[HashableT] | slice | pd.Series[bool] | Callable

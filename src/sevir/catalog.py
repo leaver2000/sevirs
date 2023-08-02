@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import abc
 import os
-from typing import Iterable
+from typing import TYPE_CHECKING, Collection, Final
 
 import pandas as pd
 import polars as pl
+from polars.dataframe.frame import DataFrame
+from polars.type_aliases import IntoExpr
+from typing_extensions import Self
 
-from ._adapters import PolarsAdapter
 from .constants import (
     DEFAULT_CATALOG,
     DEFAULT_DATA,
@@ -16,16 +19,15 @@ from .constants import (
     EVENT_TYPE,
     FILE_INDEX,
     FILE_NAME,
+    FILE_REF,
     ID,
     IMAGE_TYPES,
     IMG_TYPE,
-    IR_069,
-    IR_107,
     TIME_UTC,
-    VIS,
     EventType,
     ImageType,
 )
+from .generic import PolarsAdapter
 
 
 # =====================================================================================================================
@@ -64,38 +66,18 @@ def subset_by_image_types(df: pl.DataFrame, img_types: list[ImageType]) -> pl.Da
 
 
 # =====================================================================================================================
-class Catalog(PolarsAdapter):
-    def __init__(
-        self,
-        data: pl.DataFrame | pd.DataFrame | Catalog | str = DEFAULT_PATH_TO_SEVIR,
-        *,
-        img_types: Iterable[ImageType] | None = None,
-        catalog: str | None = DEFAULT_CATALOG,
-        data_dir: str | None = DEFAULT_DATA,
-    ) -> None:
-        if isinstance(data, str) and catalog is not None and data_dir is not None:
-            df = read(
-                os.path.join(data, catalog),
-                os.path.join(data, data_dir),
-                img_types=list(set(img_types or IMAGE_TYPES)),
-            )
 
-        elif isinstance(data, pd.DataFrame):
-            df = pl.from_pandas(data)
-        elif isinstance(data, Catalog):
-            df = data.data
-        elif isinstance(data, pl.DataFrame):
-            df = data
-        else:
-            if isinstance(data, str) and (catalog is None or data_dir is None):
-                raise ValueError("catalog and data_dir cannot be None when data is a path")
-            raise ValueError(f"Invalid type for data: {type(data)}")
 
-        super().__init__(df)
+class AbstractCatalog(abc.ABC):
+    @property
+    @abc.abstractmethod
+    def data(self) -> pl.DataFrame:
+        ...
 
-        self._repr_meta_ = ", ".join(self.image_set)
+    @property
+    def columns(self) -> list[str]:
+        return self.data.columns
 
-    # - Properties
     @property
     def id(self) -> pl.Series:  # noqa: A003
         return self.data[ID]
@@ -109,12 +91,12 @@ class Catalog(PolarsAdapter):
         return self.data[FILE_INDEX]
 
     @property
-    def image_type(self) -> pl.Series:
-        return self.data[IMG_TYPE]
+    def file_ref(self) -> pl.Series:
+        return self.data[FILE_REF]
 
     @property
-    def image_set(self) -> set[ImageType]:
-        return set(self.image_type)
+    def image_types(self) -> pl.Series:
+        return self.data[IMG_TYPE]
 
     @property
     def event_type(self) -> pl.Series:
@@ -124,41 +106,100 @@ class Catalog(PolarsAdapter):
     def time_utc(self) -> pl.Series:
         return self.data[TIME_UTC]
 
+
+class Catalog(PolarsAdapter, AbstractCatalog):
+    __slots__ = ("types",)
+    if TYPE_CHECKING:
+        types: Final[tuple[ImageType, ...]]
+
+    # - Initialization
+    def _manager(self, data: DataFrame, *, inplace: bool, img_types: tuple[ImageType, ...] | None = None) -> Self:
+        return super()._manager(data, inplace=inplace, img_types=img_types or self.types)
+
+    def __init__(
+        self,
+        data: pl.DataFrame | pd.DataFrame | Catalog | str = DEFAULT_PATH_TO_SEVIR,
+        *,
+        img_types: tuple[ImageType, ...] | None = None,
+        catalog: str | None = DEFAULT_CATALOG,
+        data_dir: str | None = DEFAULT_DATA,
+    ) -> None:
+        # fast path
+        if isinstance(data, Catalog):
+            self.types = data.types
+            super().__init__(data.data)
+            return
+
+        # validation
+        if img_types is not None and len(img_types) != len(set(img_types)):
+            raise ValueError("Duplicate image types in img_types")
+
+        # construction
+        self.types = img_types or tuple(IMAGE_TYPES)
+        if isinstance(data, str) and catalog is not None and data_dir is not None:
+            data = read(
+                os.path.join(data, catalog),
+                os.path.join(data, data_dir),
+                img_types=list(set(img_types or IMAGE_TYPES)),
+            )
+        elif isinstance(data, pd.DataFrame):
+            data = pl.from_pandas(data)
+        elif isinstance(data, pl.DataFrame):
+            data = data
+        else:
+            if isinstance(data, str) and (catalog is None or data_dir is None):
+                raise ValueError("catalog and data_dir cannot be None when data is a path")
+            raise ValueError(f"Invalid type for data: {type(data)}")
+
+        super().__init__(data.with_columns(**{FILE_REF: None}))
+
     # - Methods
+    def _where(
+        self,
+        col: str,
+        value: EventType | ImageType | Collection[EventType | ImageType],
+    ) -> pl.DataFrame:
+        s = self.data[col]
+        return self.data.filter(s.is_in(value)) if not isinstance(value, str) else self.data.filter(s == value)
+
     def where(
         self,
         col: str,
-        value: EventType | ImageType | Iterable[EventType | ImageType],
+        value: EventType | ImageType | Collection[EventType | ImageType],
         inplace: bool = False,
     ) -> Catalog:
-        s = self.data[col]
-        df = self.data.filter(s.is_in(value)) if isinstance(value, list) else self.data.filter(s == value)
-        return self._manager(df, inplace=inplace)
+        return self._manager(self._where(col, value), inplace=inplace)
 
-    def get_by_img_type(self, img_types: ImageType | Iterable[ImageType], inplace=False) -> Catalog:
-        return self.where(IMG_TYPE, img_types, inplace=inplace)
+    def get_by_img_type(self, img_types: ImageType | Collection[ImageType], inplace=False) -> Catalog:
+        return self._manager(
+            self._where(IMG_TYPE, img_types),
+            img_types=tuple((img_types,) if isinstance(img_types, str) else img_types),
+            inplace=inplace,
+        )
 
-    def get_by_event(self, event: EventType | Iterable[EventType], inplace: bool = False) -> Catalog:
+    def get_by_event(self, event: EventType | Collection[EventType], inplace: bool = False) -> Catalog:
         return self.where(EVENT_TYPE, event, inplace=inplace)
 
     def split_by_types(self, x: list[ImageType], y: list[ImageType]) -> tuple[Catalog, Catalog]:
-        img_types = self.image_set
-
-        # if not set(x + y).issubset(img_types):
-        if not set(x + y) <= img_types:
+        if not set(x + y) <= set(self.image_types):
             raise ValueError(
-                f"Catalog does not contain all of the requested image types: {set(x + y) - img_types}."
+                f"Catalog does not contain all of the requested image types: {set(x + y) - set(self.image_types)}."
                 " Use `Catalog.get_by_img_type` to get a subset of the catalog."
             )
 
         return self.get_by_img_type(x), self.get_by_img_type(y)
 
+    # =================================================================================================================
+    # - File Reference
 
-def main() -> None:
-    cat = Catalog(img_types=[VIS, IR_069, IR_107])
-    x, y = cat.split_by_types([VIS, IR_069], [IR_107])
-    print(x, y)
+    def with_reference(self, ref: IntoExpr, inplace=False) -> Catalog:
+        return self._manager(
+            self.data.with_columns(**{FILE_REF: ref}),
+            inplace=inplace,
+        )
 
-
-if __name__ == "__main__":
-    main()
+    def close(self) -> None:
+        self._manager(
+            self.data.with_columns(**{FILE_REF: None}),
+            inplace=True,
+        )

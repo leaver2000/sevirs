@@ -1,13 +1,28 @@
 # sevir
 
-This project is still a work in progress...
+This is a research product that builds on top of alot of already existing work.
 
-## Dockerfile
+[sevir_challenges](https://github.com/MIT-AI-Accelerator/sevir_challenges)
+[eie-sevir](https://github.com/MIT-AI-Accelerator/eie-sevir)
+[neurips-2020-sevir](https://github.com/MIT-AI-Accelerator/neurips-2020-sevir)
+[WAF_ML_Tutorial_Part1](https://github.com/ai2es/WAF_ML_Tutorial_Part1)
+[WAF_ML_Tutorial_Part2](https://github.com/ai2es/WAF_ML_Tutorial_Part2)
+[multi earth challenge](https://github.com/MIT-AI-Accelerator/multiearth-challenge)
 
-The Dockerfile conveniently installs all of the required dependencies for the project. It also sets up the environment
-for the user to run the project. The Dockerfile is also based on the [Dockerfile Style Guide](#dockerfile-style-guide).
+## Getting Started
 
-### Usage
+Anaconda environment's tend to be a little unreliable for consistently recreating
+the required virtual environment. So this repository includes a Dockerfile that
+will create a development environment for working with Atmospheric,
+Geospatial, and the SEVIR dataset.
+
+### Dockerfile
+
+The Dockerfile can either be served as a standalone which can be used via the
+jupyter notebook server or as a development container using the Visual Studio
+Code Remote - Containers extension.
+
+#### Usage
 
 Build and run the Dockerfile.
 
@@ -25,31 +40,16 @@ docker run -it -p 8888:8888 --gpus all \
 # open the jupyter notebook server in your browser at localhost:8888
 ```
 
-### .devcontainer
+#### .devcontainer
 
 The .devcontainer directory contains the configuration files for the
 [Visual Studio Code Remote - Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
-extension. This allows the user to develop the project in a containerized environment. The .devcontainer directory
-also contains the [Dockerfile](#dockerfile) for the project.
+extension. This allows the user to develop the project in a containerized
+environment. The .devcontainer directory also contains the [Dockerfile](#dockerfile) for the project.
 
-### Dockerfile Style Guide
+### The Hard Way
 
 ```bash
-# ==================================
-#         - Style Guide -
-# ==================================
-# FROM image AS new_image
-# USER root
-# ARG {...}
-#
-# [ { WORKDIR SHELL ENV RUN }, ... ]
-#
-# { MISC }
-# USER USER
-# ==================================
-# "description"
-# ==================================
-# FROM ...
-#
-# ==================================
+sudo apt-get install libgeos-dev proj-bin
+pip install cartopy
 ```
