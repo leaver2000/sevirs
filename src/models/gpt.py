@@ -6,14 +6,18 @@ https://github.com/openai/gpt-2/blob/master/src/model.py
 2) huggingface/transformers PyTorch implementation:
 https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/modeling_gpt2.py
 """
+from __future__ import annotations
 
-import math
 import inspect
+import logging
+import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Callable, Iterable
 
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+from typing_extensions import Self
 
 
 @dataclass
@@ -31,7 +35,10 @@ class GPTConfig:
 class LayerNorm(nn.Module):
     """LayerNorm but with an optional bias. PyTorch doesn't support simply bias=False"""
 
-    def __init__(self, ndim, bias):
+    if TYPE_CHECKING:
+        __call__: Callable[[torch.Tensor], torch.Tensor]
+
+    def __init__(self, ndim: int, bias: bool = False) -> None:
         super().__init__()
         self.weight = nn.Parameter(torch.ones(ndim))
         self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
@@ -42,7 +49,14 @@ class LayerNorm(nn.Module):
 
 # =====================================================================================================================
 class CausalSelfAttention(nn.Module):
-    def __init__(self, config):
+    if TYPE_CHECKING:
+        __call__: Callable[[CausalSelfAttention, torch.Tensor], torch.Tensor]
+        c_attn: Callable[[torch.Tensor], torch.Tensor]
+        c_proj: Callable[[torch.Tensor], torch.Tensor]
+        attn_dropout: Callable[[torch.Tensor], torch.Tensor]
+        resid_dropout: Callable[[torch.Tensor], torch.Tensor]
+
+    def __init__(self, config: GPTConfig) -> None:
         super().__init__()
         assert config.n_embd % config.n_head == 0
         # key, query, value projections for all heads, but in a batch
@@ -58,7 +72,7 @@ class CausalSelfAttention(nn.Module):
         # flash attention make GPU go brrrrr but support is only in PyTorch >= 2.0
         self.flash = hasattr(torch.nn.functional, "scaled_dot_product_attention")
         if not self.flash:
-            print("WARNING: using slow attention. Flash Attention requires PyTorch >= 2.0")
+            logging.info("WARNING: using slow attention. Flash Attention requires PyTorch >= 2.0")
             # causal mask to ensure that attention is only applied to the left in the input sequence
             self.register_buffer(
                 "bias",
@@ -67,11 +81,16 @@ class CausalSelfAttention(nn.Module):
                 ),
             )
 
-    def forward(self, x):
+    def split(self, x: torch.Tensor, dim: int = 2) -> list[torch.Tensor]:
+        """split x into `list[query, key, value]`"""
+        return torch.split(self.c_attn(x), self.n_embd, dim=dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, T, C = x.size()  # batch size, sequence length, embedding dimensionality (n_embd)
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
+        q, k, v = self.split(x, dim=2)
+
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
@@ -97,14 +116,17 @@ class CausalSelfAttention(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, config):
+    if TYPE_CHECKING:
+        __call__: Callable[[torch.Tensor], torch.Tensor]
+
+    def __init__(self, config: GPTConfig) -> None:
         super().__init__()
         self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
         self.gelu = nn.GELU()
         self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias)
         self.dropout = nn.Dropout(config.dropout)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.c_fc(x)
         x = self.gelu(x)
         x = self.c_proj(x)
@@ -113,36 +135,51 @@ class MLP(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, config):
+    if TYPE_CHECKING:
+        __call__: Callable[[Self, torch.Tensor], torch.Tensor]
+
+    def __init__(self, config: GPTConfig) -> None:
         super().__init__()
         self.ln_1 = LayerNorm(config.n_embd, bias=config.bias)
         self.attn = CausalSelfAttention(config)
         self.ln_2 = LayerNorm(config.n_embd, bias=config.bias)
         self.mlp = MLP(config)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.attn(self.ln_1(x))
         x = x + self.mlp(self.ln_2(x))
         return x
 
 
 # =====================================================================================================================
+class Transformer(nn.ModuleDict):
+    if TYPE_CHECKING:
+        wte: Callable[[torch.Tensor], torch.Tensor]
+        wpe: Callable[[torch.Tensor], torch.Tensor]
+        drop: Callable[[torch.Tensor], torch.Tensor]
+        h: Iterable[Block]
+        ln_f: Callable[[torch.Tensor], torch.Tensor]
+
+    def __init__(self, config: GPTConfig) -> None:
+        super().__init__(
+            {
+                "wte": nn.Embedding(config.vocab_size, config.n_embd),
+                "wpe": nn.Embedding(config.block_size, config.n_embd),
+                "drop": nn.Dropout(config.dropout),
+                "h": nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
+                "ln_f": LayerNorm(config.n_embd, bias=config.bias),
+            }
+        )
+
+
 class GPT(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config: GPTConfig) -> None:
         super().__init__()
         assert config.vocab_size is not None
         assert config.block_size is not None
         self.config = config
 
-        self.transformer = nn.ModuleDict(
-            dict(
-                wte=nn.Embedding(config.vocab_size, config.n_embd),
-                wpe=nn.Embedding(config.block_size, config.n_embd),
-                drop=nn.Dropout(config.dropout),
-                h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
-                ln_f=LayerNorm(config.n_embd, bias=config.bias),
-            )
-        )
+        self.transformer = Transformer(config)
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         # with weight tying when using torch.compile() some warnings get generated:
         # "UserWarning: functional_call was passed multiple values for tied weights.
@@ -158,9 +195,9 @@ class GPT(nn.Module):
                 torch.nn.init.normal_(p, mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer))
 
         # report number of parameters
-        print("number of parameters: %.2fM" % (self.get_num_params() / 1e6,))
+        logging.info("number of parameters: %.2fM" % (self.get_num_params() / 1e6,))
 
-    def get_num_params(self, non_embedding=True):
+    def get_num_params(self, non_embedding: bool = True) -> int:
         """
         Return the number of parameters in the model.
         For non-embedding count (default), the position embeddings get subtracted.
@@ -172,7 +209,7 @@ class GPT(nn.Module):
             n_params -= self.transformer.wpe.weight.numel()
         return n_params
 
-    def _init_weights(self, module):
+    def _init_weights(self, module: nn.Linear | nn.Embedding) -> None:
         if isinstance(module, nn.Linear):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
             if module.bias is not None:
@@ -180,7 +217,7 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, idx, targets=None):
+    def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None):
         device = idx.device
         b, t = idx.size()
         assert (
@@ -207,7 +244,7 @@ class GPT(nn.Module):
 
         return logits, loss
 
-    def crop_block_size(self, block_size):
+    def crop_block_size(self, block_size: int) -> None:
         # model surgery to decrease the block size if necessary
         # e.g. we may load the GPT2 pretrained model checkpoint (block size 1024)
         # but want to use a smaller block size for some smaller, simpler model
@@ -224,9 +261,12 @@ class GPT(nn.Module):
         override_args = override_args or {}  # default to empty dict
         # only dropout can be overridden see more notes below
         assert all(k == "dropout" for k in override_args)
-        from transformers import GPT2LMHeadModel
+        try:
+            from transformers import GPT2LMHeadModel
+        except ImportError:
+            raise ImportError("transformers must be installed to load pretrained weights")
 
-        print("loading weights from pretrained gpt: %s" % model_type)
+        logging.info("loading weights from pretrained gpt: %s" % model_type)
 
         # n_layer, n_head and n_embd are determined from model_type
         config_args = {
@@ -235,13 +275,13 @@ class GPT(nn.Module):
             "gpt2-large": dict(n_layer=36, n_head=20, n_embd=1280),  # 774M params
             "gpt2-xl": dict(n_layer=48, n_head=25, n_embd=1600),  # 1558M params
         }[model_type]
-        print("forcing vocab_size=50257, block_size=1024, bias=True")
+        logging.info("forcing vocab_size=50257, block_size=1024, bias=True")
         config_args["vocab_size"] = 50257  # always 50257 for GPT model checkpoints
         config_args["block_size"] = 1024  # always 1024 for GPT model checkpoints
         config_args["bias"] = True  # always True for GPT model checkpoints
         # we can override the dropout rate, if desired
         if "dropout" in override_args:
-            print(f"overriding dropout rate to {override_args['dropout']}")
+            logging.info(f"overriding dropout rate to {override_args['dropout']}")
             config_args["dropout"] = override_args["dropout"]
         # create a from-scratch initialized minGPT model
         config = GPTConfig(**config_args)
@@ -291,14 +331,17 @@ class GPT(nn.Module):
         ]
         num_decay_params = sum(p.numel() for p in decay_params)
         num_nodecay_params = sum(p.numel() for p in nodecay_params)
-        print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
-        print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
+        logging.info(
+            f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters\n"
+            f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters"
+        )
+
         # Create AdamW optimizer and use the fused version if it is available
         fused_available = "fused" in inspect.signature(torch.optim.AdamW).parameters
         use_fused = fused_available and device_type == "cuda"
         extra_args = dict(fused=True) if use_fused else dict()
         optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
-        print(f"using fused AdamW: {use_fused}")
+        logging.info(f"using fused AdamW: {use_fused}")
 
         return optimizer
 
@@ -319,7 +362,13 @@ class GPT(nn.Module):
         return mfu
 
     @torch.no_grad()
-    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+    def generate(
+        self,
+        idx: torch.LongTensor,
+        max_new_tokens: int = 100,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+    ) -> torch.LongTensor:
         """
         Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
         the sequence max_new_tokens times, feeding the predictions back into the model each time.
