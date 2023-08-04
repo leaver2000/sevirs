@@ -18,6 +18,7 @@ from typing import (
 import numpy as np
 import pandas as pd
 from pandas._typing import HashableT, Scalar
+import os
 
 if sys.version_info < (3, 11):
     from typing_extensions import TypeVarTuple, Unpack
@@ -38,8 +39,10 @@ AnyT = TypeVar("AnyT", bound=Any)
 KeyT = TypeVar("KeyT", bound=Hashable)
 ValueT = TypeVar("ValueT")
 ScalarT = TypeVar("ScalarT", bound=Scalar)
-DictStr = dict[str, AnyT]
-DictStrAny = DictStr[Any]
+
+DictStr: TypeAlias = dict[str, AnyT]
+DictStrAny: TypeAlias = DictStr[Any]
+StrPath: TypeAlias = str | os.PathLike[str]
 
 
 def cast_literal_list(cls: type[ValueT]) -> ValueT:
