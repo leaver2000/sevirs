@@ -1,23 +1,6 @@
 # flake8: noqa
 from __future__ import annotations
 
-__all__ = [
-    "Any",
-    "Generic",
-    #
-    "Self",
-    "Unpack",
-    "TypeVarTuple",
-    #
-    "N",
-    "Nd",
-    "Ts",
-    "AnyT",
-    "Array",
-    "Callable",
-    "HashableT",
-    "ColumnIndexerType",
-]
 import enum
 import sys
 from typing import (
@@ -37,7 +20,7 @@ import pandas as pd
 from pandas._typing import HashableT, Scalar
 
 if sys.version_info < (3, 11):
-    from typing_extensions import Self, TypeVarTuple, Unpack
+    from typing_extensions import TypeVarTuple, Unpack
 else:
     from typing import Self, TypeVarTuple, Unpack
 
@@ -55,6 +38,8 @@ AnyT = TypeVar("AnyT", bound=Any)
 KeyT = TypeVar("KeyT", bound=Hashable)
 ValueT = TypeVar("ValueT")
 ScalarT = TypeVar("ScalarT", bound=Scalar)
+DictStr = dict[str, AnyT]
+DictStrAny = DictStr[Any]
 
 
 def cast_literal_list(cls: type[ValueT]) -> ValueT:
@@ -64,7 +49,7 @@ def cast_literal_list(cls: type[ValueT]) -> ValueT:
     >>> NUM_LIST
     [1, 2, 3]
     """
-    return list(get_args(get_args(cls)[0]))  # type: ignore
+    return list(get_args(get_args(cls)[0]))  # type: ignore[return-value]
 
 
 # =====================================================================================================================
@@ -90,8 +75,6 @@ Runtime type is 'ndarray'
 
 
 # =====================================================================================================================
-
-
 ColumnIndexerType: TypeAlias = """(
 slice
 | HashableT

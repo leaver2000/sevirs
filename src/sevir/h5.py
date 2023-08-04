@@ -1,22 +1,14 @@
 from __future__ import annotations
 
 import logging
-from typing import (
-    TYPE_CHECKING,
-    Collection,
-    Final,
-    Iterator,
-    Literal,
-    Mapping,
-    cast,
-    overload,
-)
+from typing import TYPE_CHECKING, Collection, Iterator, Literal, Mapping, cast, overload
 
 import h5py
 import numpy as np
 import polars as pl
 import tqdm
 from numpy.typing import NDArray
+from scipy.interpolate import RegularGridInterpolator
 
 from ._typing import AnyT, Array, N, Nd
 from .catalog import AbstractCatalog, Catalog
@@ -39,13 +31,40 @@ from .constants import (
 from .generic import AbstractContextManager
 
 
-def reshape_lightning_data(
+# =====================================================================================================================
+def squarespace(in_size: int, out_size: int) -> tuple[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]]:
+    xy1 = np.linspace(0, 1.0 / in_size, in_size)
+    xy2 = np.linspace(0, 1.0 / in_size, out_size)
+    return (xy1, xy1), tuple(np.meshgrid(xy2, xy2, indexing="ij"))  # type: ignore[return-value]
+
+
+def interpatch(arr: Array[Nd[N, N, N], AnyT], patch_size: int) -> Array[Nd[N, N, N], AnyT]:
+    """
+    Interpolate the values of a 4D array to a new PatchSize
+
+    assumes a 4D array with shape (B, L, W, T) where L == W, reshapes the array
+    and interpolates the array to (B, lxl, lxl, T) using
+    scipy.interpolate.RegularGridInterpolator.
+
+    >>> arr = np.random.randint(0, 255, (1, 384, 384, 49))
+    >>> regrid(arr, 768).shape
+    (1, 768, 768, 49)
+    """
+    x, y = arr.shape[:2]
+    if not x == y:
+        raise ValueError(f"array must be square, but got shape: {arr.shape}")
+    points, values = squarespace(x, patch_size)
+    interp = RegularGridInterpolator(points, arr)
+    return interp(values).astype(arr.dtype)
+
+
+def reshape_lightning(
     data: Array[Nd[N, Literal[5]], AnyT],
     *,
     img_size: int = 48,
     t_slice=slice(0, None),
     t_frame: Array[Nd[N], np.float64] = DEFAULT_FRAME_TIMES,
-) -> Array[Nd[N, N, N, N], np.int16]:
+) -> Array[Nd[N, N, N], np.int16]:
     """Converts Nx5 lightning data matrix into a 2D grid of pixel counts
     this function was adopted from
     [eie-sevir](https://github.com/MIT-AI-Accelerator/eie-sevir/blob/master/sevir/generator.py#L386)
@@ -98,21 +117,21 @@ class H5File(h5py.File):
 
     __slots__ = ("image_type",)
     if TYPE_CHECKING:
-        image_type: Final[ImageType]
+        image_type: ImageType
 
     def __init__(self, filename: str, image_type: ImageType) -> None:
         self.image_type = image_type
         super().__init__(filename, mode="r")
 
-    def __getitem__(self, __id: bytes | str, /) -> Array[Nd[N, N, N, N], np.int16]:
+    def __getitem__(self, __id: bytes | str, /) -> Array[Nd[N, N, N], np.int16]:
         img_t = self.image_type
 
         return cast(
-            Array[Nd[N, N, N, N], np.int16],
-            reshape_lightning_data(super().__getitem__(__id)) if img_t == LGHT else super().__getitem__(img_t),  # type: ignore[unused-ignore] # noqa: E501
+            Array[Nd[N, N, N], np.int16],
+            reshape_lightning(super().__getitem__(__id)) if img_t == LGHT else super().__getitem__(img_t),  # type: ignore[unused-ignore] # noqa: E501
         )
 
-    def get_by_file_index(self, index: int) -> Array[Nd[N, N, N, N], np.int16]:
+    def get_by_file_index(self, index: int) -> Array[Nd[N, N, N], np.int16]:
         return self[self.event_ids[index]]
 
     @property
@@ -121,7 +140,7 @@ class H5File(h5py.File):
 
 
 class H5Store(
-    Mapping[str | bytes, list[Array[Nd[N, N, N, N], np.int16]]], AbstractCatalog, AbstractContextManager["H5Store"]
+    Mapping[str | bytes, list[Array[Nd[N, N, N], np.int16]]], AbstractCatalog, AbstractContextManager["H5Store"]
 ):
     """
     the dataset effectively maps the following structure:
@@ -178,48 +197,47 @@ class H5Store(
     def types(self) -> tuple[ImageType, ...]:
         return self.catalog.types
 
-    # - Mapping interface
-    def __getitem__(self, id_: str | bytes) -> list[Array[Nd[N, N, N, N], np.int16]]:
-        return self.get_batch(id_)
-
-    def __iter__(self) -> Iterator[bytes]:
-        return iter(set(self.catalog.id))
-
-    def __len__(self) -> int:
-        return len(self._files)
-
+    # =================================================================================================================
     # - Methods
     @overload  # type: ignore[misc]
-    def get_batch(
+    def select(
         self, id_: str | bytes, *, img_types: Collection[ImageType] | None = None, metadata: Literal[False] = False
-    ) -> list[Array[Nd[N, N, N, N], np.int16]]:
+    ) -> list[Array[Nd[N, N, N], np.int16]]:
         ...
 
     @overload
-    def get_batch(
+    def select(
         self, id_: str | bytes, *, img_types: Collection[ImageType] | None = None, metadata: Literal[True] = True
-    ) -> tuple[list[Array[Nd[N, N, N, N], np.int16]], pl.DataFrame]:
+    ) -> tuple[list[Array[Nd[N, N, N], np.int16]], pl.DataFrame]:
         ...
 
-    def get_batch(
+    def select(
         self, id_: str | bytes, *, img_types: Collection[ImageType] | None = None, metadata: bool = False
-    ) -> list[Array[Nd[N, N, N, N], np.int16]] | tuple[list[Array[Nd[N, N, N, N], np.int16]], pl.DataFrame]:
+    ) -> list[Array[Nd[N, N, N], np.int16]] | tuple[list[Array[Nd[N, N, N], np.int16]], pl.DataFrame]:
         if isinstance(id_, bytes):
             id_ = id_.decode("utf-8")
 
-        batch = [
-            self._files[fref][id_][fidx : fidx + 1, :, :, :]
-            for fref, fidx in self.iter_indices(id_, img_types=img_types)
-        ]
+        events = [self._files[fref][id_][fidx, :, :, :] for fref, fidx in self.iter_indices(id_, img_types=img_types)]
         if metadata:
-            return batch, self.data.filter(self.id == id_)
+            return events, self.data.filter(self.id == id_)
+        return events
 
-        return batch
+    def __getitem__(self, id_: str | bytes) -> list[Array[Nd[N, N, N], np.int16]]:
+        return self.select(id_)
+
+    # =================================================================================================================
+    def interpstack(self, img_id: str | bytes, patch_size: int) -> Array[Nd[N, N, N, N], np.int16]:
+        """Interpolates the [B, L, W, T] to the provided patch_size"""
+        arrays = [
+            arr if img_t.patch_size == patch_size else interpatch(arr, patch_size)
+            for img_t, arr in zip(self.types, self.select(img_id))
+        ]
+        return np.stack(arrays, axis=0)
 
     def iter_files(self) -> Iterator[tuple[str, ImageType]]:
         columns = pl.col(FILE_NAME), pl.col(IMG_TYPE)
         df = self.data.select(columns)
-        return df.unique(subset=FILE_NAME).iter_rows()
+        return df.unique(subset=FILE_NAME).iter_rows()  # type: ignore[return-value]
 
     def iter_indices(self, id_: str, *, img_types: Collection[ImageType] | None = None) -> Iterator[tuple[int, int]]:
         """returns an iterator of (file_ref, file_index) tuples for the given id and image types"""
@@ -241,3 +259,11 @@ class H5Store(
 
     def is_closed(self) -> bool:
         return len(self._files) == 0
+
+    # - Mapping interface
+
+    def __iter__(self) -> Iterator[bytes]:
+        return iter(set(self.catalog.id))
+
+    def __len__(self) -> int:
+        return len(self._files)

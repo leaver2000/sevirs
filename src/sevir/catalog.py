@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import abc
 import os
-from typing import TYPE_CHECKING, Collection, Final
+from typing import TYPE_CHECKING, Any, Collection, Final
 
 import pandas as pd
 import polars as pl
@@ -66,8 +66,6 @@ def subset_by_image_types(df: pl.DataFrame, img_types: list[ImageType]) -> pl.Da
 
 
 # =====================================================================================================================
-
-
 class AbstractCatalog(abc.ABC):
     @property
     @abc.abstractmethod
@@ -113,29 +111,26 @@ class Catalog(PolarsAdapter, AbstractCatalog):
         types: Final[tuple[ImageType, ...]]
 
     # - Initialization
-    def _manager(self, data: DataFrame, *, inplace: bool, img_types: tuple[ImageType, ...] | None = None) -> Self:
-        return super()._manager(data, inplace=inplace, img_types=img_types or self.types)
+    def _manager(
+        self, data: DataFrame, *, inplace: bool, img_types: tuple[ImageType, ...] | None = None, **kwargs: Any
+    ) -> Self:
+        return super()._manager(data, inplace=inplace, img_types=img_types or self.types, **kwargs)
 
-    def __init__(
-        self,
+    @staticmethod
+    def _constructor(
         data: pl.DataFrame | pd.DataFrame | Catalog | str = DEFAULT_PATH_TO_SEVIR,
         *,
         img_types: tuple[ImageType, ...] | None = None,
         catalog: str | None = DEFAULT_CATALOG,
         data_dir: str | None = DEFAULT_DATA,
-    ) -> None:
-        # fast path
+    ) -> tuple[pl.DataFrame, tuple[ImageType, ...]]:
         if isinstance(data, Catalog):
-            self.types = data.types
-            super().__init__(data.data)
-            return
-
+            return data.data, data.types
         # validation
         if img_types is not None and len(img_types) != len(set(img_types)):
             raise ValueError("Duplicate image types in img_types")
 
         # construction
-        self.types = img_types or tuple(IMAGE_TYPES)
         if isinstance(data, str) and catalog is not None and data_dir is not None:
             data = read(
                 os.path.join(data, catalog),
@@ -151,7 +146,19 @@ class Catalog(PolarsAdapter, AbstractCatalog):
                 raise ValueError("catalog and data_dir cannot be None when data is a path")
             raise ValueError(f"Invalid type for data: {type(data)}")
 
-        super().__init__(data.with_columns(**{FILE_REF: None}))
+        return data.with_columns(**{FILE_REF: None}), img_types or tuple(IMAGE_TYPES)
+
+    def __init__(
+        self,
+        data: pl.DataFrame | pd.DataFrame | Catalog | str = DEFAULT_PATH_TO_SEVIR,
+        *,
+        img_types: tuple[ImageType, ...] | None = None,
+        catalog: str | None = DEFAULT_CATALOG,
+        data_dir: str | None = DEFAULT_DATA,
+    ) -> None:
+        data, types = self._constructor(data, img_types=img_types, catalog=catalog, data_dir=data_dir)
+        super().__init__(data)
+        self.types = types
 
     # - Methods
     def _where(

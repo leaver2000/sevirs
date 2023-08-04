@@ -47,7 +47,7 @@ def get_colors_and_boundaries(img_type: ImageType) -> tuple[np.ndarray, np.ndarr
 
 
 def get_cmap(colors: np.ndarray, bad: int, under: int, over: int, good: slice) -> ListedColormap:
-    cmap = ListedColormap(colors[good])  # type: ignore
+    cmap = ListedColormap(colors[good])
     cmap.set_bad(colors[bad])
     cmap.set_under(colors[under])
     cmap.set_over(colors[over])
@@ -117,7 +117,7 @@ def time_series_plots(
 ) -> tuple[plt.Figure, Mapping[tuple[int, int], plt.Axes], list[tuple[int, int]]]:
     fig, axs = plt.subplots(y, x, figsize=(x * ratio, y * ratio))
     indices = [(i, i * (xs // x)) for i in range(x)]
-    return (fig, axs, indices)  # type: ignore
+    return (fig, axs, indices)
 
 
 # =====================================================================================================================
