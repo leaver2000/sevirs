@@ -12,12 +12,19 @@ import inspect
 import logging
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Iterable
+from typing import TYPE_CHECKING, Callable, Iterable, Protocol
 
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from typing_extensions import Self
+
+
+class ModuleProto(Protocol):
+    weight: torch.Tensor
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        ...
 
 
 @dataclass
@@ -43,8 +50,14 @@ class LayerNorm(nn.Module):
         self.weight = nn.Parameter(torch.ones(ndim))
         self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
 
-    def forward(self, input):
-        return F.layer_norm(input, self.weight.shape, self.weight, self.bias, 1e-5)
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return F.layer_norm(
+            input,
+            normalized_shape=self.weight.shape,
+            weight=self.weight,
+            bias=self.bias,
+            eps=1e-5,
+        )
 
 
 # =====================================================================================================================
@@ -115,9 +128,9 @@ class CausalSelfAttention(nn.Module):
         return y
 
 
-class MLP(nn.Module):
+class MultiLayerPerceptron(nn.Module):
     if TYPE_CHECKING:
-        __call__: Callable[[torch.Tensor], torch.Tensor]
+        __call__: Callable[..., torch.Tensor]
 
     def __init__(self, config: GPTConfig) -> None:
         super().__init__()
@@ -140,25 +153,28 @@ class Block(nn.Module):
 
     def __init__(self, config: GPTConfig) -> None:
         super().__init__()
-        self.ln_1 = LayerNorm(config.n_embd, bias=config.bias)
         self.attn = CausalSelfAttention(config)
+        self.ln_1 = LayerNorm(config.n_embd, bias=config.bias)
+
+        self.mlp = MultiLayerPerceptron(config)
         self.ln_2 = LayerNorm(config.n_embd, bias=config.bias)
-        self.mlp = MLP(config)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.attn(self.ln_1(x))
-        x = x + self.mlp(self.ln_2(x))
+        x = x + self.mlp(self.ln_2.__call__(x))
         return x
 
 
 # =====================================================================================================================
+
+
 class Transformer(nn.ModuleDict):
     if TYPE_CHECKING:
-        wte: Callable[[torch.Tensor], torch.Tensor]
-        wpe: Callable[[torch.Tensor], torch.Tensor]
-        drop: Callable[[torch.Tensor], torch.Tensor]
+        wte: ModuleProto
+        wpe: ModuleProto
+        drop: ModuleProto
         h: Iterable[Block]
-        ln_f: Callable[[torch.Tensor], torch.Tensor]
+        ln_f: ModuleProto
 
     def __init__(self, config: GPTConfig) -> None:
         super().__init__(
@@ -209,7 +225,7 @@ class GPT(nn.Module):
             n_params -= self.transformer.wpe.weight.numel()
         return n_params
 
-    def _init_weights(self, module: nn.Linear | nn.Embedding) -> None:
+    def _init_weights(self, module: nn.Module) -> None:
         if isinstance(module, nn.Linear):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
             if module.bias is not None:

@@ -1,8 +1,9 @@
 import argparse
-from types import SimpleNamespace
-from typing_extensions import Self
 import typing
-from typing import Any, Iterable, TypeVar, Callable
+from types import SimpleNamespace
+from typing import Any, Iterable, TypeVar
+
+from typing_extensions import Self
 
 T = TypeVar("T")
 

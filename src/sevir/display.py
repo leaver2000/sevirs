@@ -3,6 +3,7 @@
 Creates plots of SEVIR events using cartopy library
 """
 from __future__ import annotations
+
 import re
 from typing import Any, Mapping, TypeAlias
 

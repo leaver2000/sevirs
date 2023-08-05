@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import enum
+import os
 import sys
 from typing import (
     TYPE_CHECKING,
@@ -18,7 +19,6 @@ from typing import (
 import numpy as np
 import pandas as pd
 from pandas._typing import HashableT, Scalar
-import os
 
 if sys.version_info < (3, 11):
     from typing_extensions import TypeVarTuple, Unpack

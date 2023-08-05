@@ -1,360 +1,190 @@
-from typing import Literal
 import polars as pl
+from polars.type_aliases import SchemaDict
 
-from .._typing import cast_literal_list
-
-MRMSType = Literal[
-    "BREF_1HR_MAX",
-    "BrightBandBottomHeight",
-    "BrightBandTopHeight",
-    "CREF_1HR_MAX",
-    "EchoTop_18",
-    "EchoTop_30",
-    "EchoTop_50",
-    "EchoTop_60",
-    "FLASH_CREST_MAXSOILSAT",
-    "FLASH_CREST_MAXSTREAMFLOW",
-    "FLASH_CREST_MAXUNITSTREAMFLOW",
-    "FLASH_HP_MAXSTREAMFLOW",
-    "FLASH_HP_MAXUNITSTREAMFLOW",
-    "FLASH_QPE_ARI01H",
-    "FLASH_QPE_ARI03H",
-    "FLASH_QPE_ARI06H",
-    "FLASH_QPE_ARI12H",
-    "FLASH_QPE_ARI24H",
-    "FLASH_QPE_ARI30M",
-    "FLASH_QPE_ARIMAX",
-    "FLASH_QPE_FFG01H",
-    "FLASH_QPE_FFG03H",
-    "FLASH_QPE_FFG06H",
-    "FLASH_QPE_FFGMAX",
-    "FLASH_SAC_MAXSOILSAT",
-    "FLASH_SAC_MAXSTREAMFLOW",
-    "FLASH_SAC_MAXUNITSTREAMFLOW",
-    "GaugeInflIndex_01H_Pass1",
-    "GaugeInflIndex_01H_Pass2",
-    "GaugeInflIndex_03H_Pass1",
-    "GaugeInflIndex_03H_Pass2",
-    "GaugeInflIndex_06H_Pass1",
-    "GaugeInflIndex_06H_Pass2",
-    "GaugeInflIndex_12H_Pass1",
-    "GaugeInflIndex_12H_Pass2",
-    "GaugeInflIndex_24H_Pass1",
-    "GaugeInflIndex_24H_Pass2",
-    "GaugeInflIndex_48H_Pass1",
-    "GaugeInflIndex_48H_Pass2",
-    "GaugeInflIndex_72H_Pass1",
-    "GaugeInflIndex_72H_Pass2",
-    "H50_Above_-20C",
-    "H50_Above_0C",
-    "H60_Above_-20C",
-    "H60_Above_0C",
-    "HeightCompositeReflectivity",
-    "HeightLowLevelCompositeReflectivity",
-    "LVL3_HREET",
-    "LVL3_HighResVIL",
-    "LayerCompositeReflectivity_ANC",
-    "LayerCompositeReflectivity_High",
-    "LayerCompositeReflectivity_Low",
-    "LayerCompositeReflectivity_Super",
-    "LowLevelCompositeReflectivity",
-    "MESH",
-    "MESH_Max_120min",
-    "MESH_Max_1440min",
-    "MESH_Max_240min",
-    "MESH_Max_30min",
-    "MESH_Max_360min",
-    "MESH_Max_60min",
-    "MergedAzShear_0-2kmAGL",
-    "MergedAzShear_3-6kmAGL",
-    "MergedBaseReflectivity",
-    "MergedBaseReflectivityQC",
-    "MergedReflectivityAtLowestAltitude",
-    "MergedReflectivityComposite",
-    "MergedReflectivityQC",
-    "MergedReflectivityQCComposite",
-    "MergedReflectivityQComposite",
-    "MergedRhoHV",
-    "MergedZdr",
-    "Model_0degC_Height",
-    "Model_SurfaceTemp",
-    "Model_WetBulbTemp",
-    "MultiSensor_QPE_01H_Pass1",
-    "MultiSensor_QPE_01H_Pass2",
-    "MultiSensor_QPE_03H_Pass1",
-    "MultiSensor_QPE_03H_Pass2",
-    "MultiSensor_QPE_06H_Pass1",
-    "MultiSensor_QPE_06H_Pass2",
-    "MultiSensor_QPE_12H_Pass1",
-    "MultiSensor_QPE_12H_Pass2",
-    "MultiSensor_QPE_24H_Pass1",
-    "MultiSensor_QPE_24H_Pass2",
-    "MultiSensor_QPE_48H_Pass1",
-    "MultiSensor_QPE_48H_Pass2",
-    "MultiSensor_QPE_72H_Pass1",
-    "MultiSensor_QPE_72H_Pass2",
-    "NLDN_CG_001min_AvgDensity",
-    "NLDN_CG_005min_AvgDensity",
-    "NLDN_CG_015min_AvgDensity",
-    "NLDN_CG_030min_AvgDensity",
-    "POSH",
-    "PrecipFlag",
-    "PrecipRate",
-    "RadarAccumulationQualityIndex_01H",
-    "RadarAccumulationQualityIndex_03H",
-    "RadarAccumulationQualityIndex_06H",
-    "RadarAccumulationQualityIndex_12H",
-    "RadarAccumulationQualityIndex_24H",
-    "RadarAccumulationQualityIndex_48H",
-    "RadarAccumulationQualityIndex_72H",
-    "RadarOnly_QPE_01H",
-    "RadarOnly_QPE_03H",
-    "RadarOnly_QPE_06H",
-    "RadarOnly_QPE_12H",
-    "RadarOnly_QPE_15M",
-    "RadarOnly_QPE_24H",
-    "RadarOnly_QPE_48H",
-    "RadarOnly_QPE_72H",
-    "RadarOnly_QPE_Since12Z",
-    "RadarQualityIndex",
-    "ReflectivityAtLowestAltitude",
-    "Reflectivity_-10C",
-    "Reflectivity_-15C",
-    "Reflectivity_-20C",
-    "Reflectivity_-5C",
-    "Reflectivity_0C",
-    "RotationTrack120min",
-    "RotationTrack1440min",
-    "RotationTrack240min",
-    "RotationTrack30min",
-    "RotationTrack360min",
-    "RotationTrack60min",
-    "RotationTrackML120min",
-    "RotationTrackML1440min",
-    "RotationTrackML240min",
-    "RotationTrackML30min",
-    "RotationTrackML360min",
-    "RotationTrackML60min",
-    "SHI",
-    "SeamlessHSR",
-    "SeamlessHSRHeight",
-    "SyntheticPrecipRateID",
-    "VII",
-    "VIL",
-    "VIL_Density",
-    "VIL_Max_120min",
-    "VIL_Max_1440min",
-    "WarmRainProbability",
-]
-MRMS_TYPES = (
-    BREF_1HR_MAX,
-    BRIGHT_BAND_BOTTOM_HEIGHT,
-    BRIGHT_BAND_TOP_HEIGHT,
-    CREF_1HR_MAX,
-    ECHO_TOP_18,
-    ECHO_TOP_30,
-    ECHO_TOP_50,
-    ECHO_TOP_60,
-    FLASH_CREST_MAX_SOIL_SAT,
-    FLASH_CREST_MAX_STREAM_FLOW,
-    FLASH_CREST_MAX_UNITSTREAM_FLOW,
-    FLASH_HP_MAXSTREAMFLOW,
-    FLASH_HP_MAXUNITSTREAMFLOW,
-    FLASH_QPE_ARI01H,
-    FLASH_QPE_ARI03H,
-    FLASH_QPE_ARI06H,
-    FLASH_QPE_ARI12H,
-    FLASH_QPE_ARI24H,
-    FLASH_QPE_ARI30M,
-    FLASH_QPE_ARIMAX,
-    FLASH_QPE_FFG01H,
-    FLASH_QPE_FFG03H,
-    FLASH_QPE_FFG06H,
-    FLASH_QPE_FFGMAX,
-    FLASH_SAC_MAXSOILSAT,
-    FLASH_SAC_MAXSTREAMFLOW,
-    FLASH_SAC_MAXUNITSTREAMFLOW,
-    GAUGE_INFL_INDEX_01H_PASS1,
-    GAUGE_INFL_INDEX_01H_PASS2,
-    GAUGE_INFL_INDEX_03H_PASS1,
-    GAUGE_INFL_INDEX_03H_PASS2,
-    GAUGE_INFL_INDEX_06H_PASS1,
-    GAUGE_INFL_INDEX_06H_PASS2,
-    GAUGE_INFL_INDEX_12H_PASS1,
-    GAUGE_INFL_INDEX_12H_PASS2,
-    GAUGE_INFL_INDEX_24H_PASS1,
-    GAUGE_INFL_INDEX_24H_PASS2,
-    GAUGE_INFL_INDEX_48H_PASS1,
-    GAUGE_INFL_INDEX_48H_PASS2,
-    GAUGE_INFL_INDEX_72H_PASS1,
-    GAUGE_INFL_INDEX_72H_PASS2,
-    H50_ABOVE_M20C,
-    H50_ABOVE_0C,
-    H60_ABOVE_M20C,
-    H60_ABOVE_0C,
-    HEIGHT_COMPOSITEREFLECTIVITY,
-    HEIGHT_LOWLEVELCOMPOSITEREFLECTIVITY,
-    LVL3_HR_EET,
-    LVL3_HIGH_RES_VIL,
-    LAYER_COMPOSITE_REFLECTIVITY_ANC,
-    LAYER_COMPOSITE_REFLECTIVITY_HIGH,
-    LAYER_COMPOSITE_REFLECTIVITY_LOW,
-    LAYER_COMPOSITE_REFLECTIVITY_SUPER,
-    LOW_LEVEL_COMPOSITE_REFLECTIVITY,
-    MESH,
-    MESH_MAX_120MIN,
-    MESH_MAX_1440MIN,
-    MESH_MAX_240MIN,
-    MESH_MAX_30MIN,
-    MESH_MAX_360MIN,
-    MESH_MAX_60MIN,
-    MERGED_AZ_SHEAR_0_2KMAGL,
-    MERGED_AZ_SHEAR_3_6KMAGL,
-    MERGED_BASE_REFLECTIVITY,
-    MERGED_BASE_REFLECTIVITYQC,
-    MERGED_REFLECTIVITY_AT_LOWEST_ALTITUDE,
-    MERGED_REFLECTIVITY_COMPOSITE,
-    MERGED_REFLECTIVITY_QC,
-    MERGED_REFLECTIVITY_QC_COMPOSITE,
-    MERGED_REFLECTIVITY_QC_COMPOSITE,
-    MERGED_RHOHV,
-    MERGED_ZDR,
-    MODEL_0DEGC_HEIGHT,
-    MODEL_SURFACE_TEMP,
-    MODEL_WETBULB_TEMP,
-    MULTI_SENSOR_QPE_01H_PASS1,
-    MULTI_SENSOR_QPE_01H_PASS2,
-    MULTI_SENSOR_QPE_03H_PASS1,
-    MULTI_SENSOR_QPE_03H_PASS2,
-    MULTI_SENSOR_QPE_06H_PASS1,
-    MULTI_SENSOR_QPE_06H_PASS2,
-    MULTI_SENSOR_QPE_12H_PASS1,
-    MULTI_SENSOR_QPE_12H_PASS2,
-    MULTI_SENSOR_QPE_24H_PASS1,
-    MULTI_SENSOR_QPE_24H_PASS2,
-    MULTI_SENSOR_QPE_48H_PASS1,
-    MULTI_SENSOR_QPE_48H_PASS2,
-    MULTI_SENSOR_QPE_72H_PASS1,
-    MULTI_SENSOR_QPE_72H_PASS2,
-    NLDN_CG_001MIN_AVG_DENSITY,
-    NLDN_CG_005MIN_AVG_DENSITY,
-    NLDN_CG_015MIN_AVG_DENSITY,
-    NLDN_CG_030MIN_AVG_DENSITY,
-    POSH,
-    PRECIP_FLAG,
-    PRECIP_RATE,
-    RADAR_ACCUMULATION_QUALITY_INDEX_01H,
-    RADAR_ACCUMULATION_QUALITY_INDEX_03H,
-    RADAR_ACCUMULATION_QUALITY_INDEX_06H,
-    RADAR_ACCUMULATION_QUALITY_INDEX_12H,
-    RADAR_ACCUMULATION_QUALITY_INDEX_24H,
-    RADAR_ACCUMULATION_QUALITY_INDEX_48H,
-    RADAR_ACCUMULATION_QUALITY_INDEX_72H,
-    RADAR_ONLY_QPE_01H,
-    RADAR_ONLY_QPE_03H,
-    RADAR_ONLY_QPE_06H,
-    RADAR_ONLY_QPE_12H,
-    RADAR_ONLY_QPE_15M,
-    RADAR_ONLY_QPE_24H,
-    RADAR_ONLY_QPE_48H,
-    RADAR_ONLY_QPE_72H,
-    RADAR_ONLY_QPE_SINCE12Z,
-    RADAR_QUALITY_INDEX,
-    REFLECTIVITY_AT_LOWEST_ALTITUDE,
-    REFLECTIVITY_M10C,
-    REFLECTIVITY_M15C,
-    REFLECTIVITY_M20C,
-    REFLECTIVITY_M5C,
-    REFLECTIVITY_0C,
-    ROTATION_TRACK120MIN,
-    ROTATION_TRACK1440MIN,
-    ROTATION_TRACK240MIN,
-    ROTATION_TRACK30MIN,
-    ROTATION_TRACK360MIN,
-    ROTATION_TRACK60MIN,
-    ROTATION_TRACKML120MIN,
-    ROTATION_TRACKML1440MIN,
-    ROTATION_TRACKML240MIN,
-    ROTATION_TRACKML30MIN,
-    ROTATION_TRACKML360MIN,
-    ROTATION_TRACKML60MIN,
-    SHI,
-    SEAMLESS_HSR,
-    SEAMLESS_HSR_HEIGHT,
-    SYNTHETIC_PRECIP_RATE_ID,
-    VII,
-    VIL,
-    VIL_DENSITY,
-    VIL_MAX_120MIN,
-    VIL_MAX_1440MIN,
-    WARM_RAIN_PROBABILITY,
-) = cast_literal_list(list[MRMSType])
-
+IASTATE_URL = "https://mrms.agron.iastate.edu"
+IASTATE_PATH_FORMAT = "%Y/%m/%d"
+IASTATE_FILE_FORMAT = "%Y%m%d%H.zip"
 # =============================================================================
-(GEOMETRY, FEATURES, PROPERTIES) = ("geometry", "features", "properties")
-ProbsevereColumn = Literal[
-    "ID",
-    "validTime",
-    "PS",
-    "MUCAPE",
-    "MLCAPE",
-    "MLCIN",
-    "EBSHEAR",
-    "SRH01KM",
-    "MEANWIND_1-3kmAGL",
-    "MESH",
-    "VIL_DENSITY",
-    "FLASH_RATE",
-    "FLASH_DENSITY",
-    "MAXLLAZ",
-    "P98LLAZ",
-    "P98MLAZ",
-    "MAXRC_EMISS",
-    "MAXRC_ICECF",
-    "WETBULB_0C_HGT",
-    "PWAT",
-    "CAPE_M10M30",
-    "LJA",
-    "SIZE",
-    "AVG_BEAM_HGT",
-    "MOTION_EAST",
-    "MOTION_SOUTH",
-    "coordinates",
-]
+# these are the types needed to access the MRMS data within the IAState zip file
+MRMS_BREF_1HR_MAX = "BREF_1HR_MAX"
+MRMS_BRIGHT_BAND_BOTTOM_HEIGHT = "BrightBandBottomHeight"
+MRMS_BRIGHT_BAND_TOP_HEIGHT = "BrightBandTopHeight"
+MRMS_CREF_1HR_MAX = "CREF_1HR_MAX"
+MRMS_ECHO_TOP_18 = "EchoTop_18"
+MRMS_ECHO_TOP_30 = "EchoTop_30"
+MRMS_ECHO_TOP_50 = "EchoTop_50"
+MRMS_ECHO_TOP_60 = "EchoTop_60"
+MRMS_FLASH_CREST_MAX_SOILSAT = "FLASH_CREST_MAXSOILSAT"
+MRMS_FLASH_CREST_MAX_STREAM_FLOW = "FLASH_CREST_MAXSTREAMFLOW"
+MRMS_FLASH_CREST_MAX_UNIT_STREAM_FLOW = "FLASH_CREST_MAXUNITSTREAMFLOW"
+MRMS_FLASH_HP_MAX_STREAM_FLOW = "FLASH_HP_MAXSTREAMFLOW"
+MRMS_FLASH_HP_MAX_UNIT_STREAM_FLOW = "FLASH_HP_MAXUNITSTREAMFLOW"
+MRMS_FLASH_QPE_ARI01H = "FLASH_QPE_ARI01H"
+MRMS_FLASH_QPE_ARI03H = "FLASH_QPE_ARI03H"
+MRMS_FLASH_QPE_ARI06H = "FLASH_QPE_ARI06H"
+MRMS_FLASH_QPE_ARI12H = "FLASH_QPE_ARI12H"
+MRMS_FLASH_QPE_ARI24H = "FLASH_QPE_ARI24H"
+MRMS_FLASH_QPE_ARI30M = "FLASH_QPE_ARI30M"
+MRMS_FLASH_QPE_ARI_MAX = "FLASH_QPE_ARIMAX"
+MRMS_FLASH_QPE_FFG01H = "FLASH_QPE_FFG01H"
+MRMS_FLASH_QPE_FFG03H = "FLASH_QPE_FFG03H"
+MRMS_FLASH_QPE_FFG06H = "FLASH_QPE_FFG06H"
+MRMS_FLASH_QPE_FFG_MAX = "FLASH_QPE_FFGMAX"
+MRMS_FLASH_SAC_MAX_SOILSAT = "FLASH_SAC_MAXSOILSAT"
+MRMS_FLASH_SAC_MAX_STREAM_FLOW = "FLASH_SAC_MAXSTREAMFLOW"
+MRMS_FLASH_SAC_MAX_UNIT_STREAM_FLOW = "FLASH_SAC_MAXUNITSTREAMFLOW"
+MRMS_GAUGE_INFL_INDEX_01H_PASS1 = "GaugeInflIndex_01H_Pass1"
+MRMS_GAUGE_INFL_INDEX_01H_PASS2 = "GaugeInflIndex_01H_Pass2"
+MRMS_GAUGE_INFL_INDEX_03H_PASS1 = "GaugeInflIndex_03H_Pass1"
+MRMS_GAUGE_INFL_INDEX_03H_PASS2 = "GaugeInflIndex_03H_Pass2"
+MRMS_GAUGE_INFL_INDEX_06H_PASS1 = "GaugeInflIndex_06H_Pass1"
+MRMS_GAUGE_INFL_INDEX_06H_PASS2 = "GaugeInflIndex_06H_Pass2"
+MRMS_GAUGE_INFL_INDEX_12H_PASS1 = "GaugeInflIndex_12H_Pass1"
+MRMS_GAUGE_INFL_INDEX_12H_PASS2 = "GaugeInflIndex_12H_Pass2"
+MRMS_GAUGE_INFL_INDEX_24H_PASS1 = "GaugeInflIndex_24H_Pass1"
+MRMS_GAUGE_INFL_INDEX_24H_PASS2 = "GaugeInflIndex_24H_Pass2"
+MRMS_GAUGE_INFL_INDEX_48H_PASS1 = "GaugeInflIndex_48H_Pass1"
+MRMS_GAUGE_INFL_INDEX_48H_PASS2 = "GaugeInflIndex_48H_Pass2"
+MRMS_GAUGE_INFL_INDEX_72H_PASS1 = "GaugeInflIndex_72H_Pass1"
+MRMS_GAUGE_INFL_INDEX_72H_PASS2 = "GaugeInflIndex_72H_Pass2"
+MRMS_H50_ABOVE_M20C = "H50_Above_-20C"
+MRMS_H50_ABOVE_0C = "H50_Above_0C"
+MRMS_H60_ABOVE_M20C = "H60_Above_-20C"
+MRMS_H60_ABOVE_0C = "H60_Above_0C"
+MRMS_HEIGHT_COMPOSITE_REFLECTIVITY = "HeightCompositeReflectivity"
+MRMS_HEIGHT_LOW_LEVEL_COMPOSITE_REFLECTIVITY = "HeightLowLevelCompositeReflectivity"
+MRMS_LVL3_HREET = "LVL3_HREET"
+MRMS_LVL3_HIGHRES_VIL = "LVL3_HighResVIL"
+MRMS_LAYER_COMPOSITE_REFLECTIVITY_ANC = "LayerCompositeReflectivity_ANC"
+MRMS_LAYER_COMPOSITE_REFLECTIVITY_HIGH = "LayerCompositeReflectivity_High"
+MRMS_LAYER_COMPOSITE_REFLECTIVITY_LOW = "LayerCompositeReflectivity_Low"
+MRMS_LAYER_COMPOSITE_REFLECTIVITY_SUPER = "LayerCompositeReflectivity_Super"
+MRMS_LOW_LEVEL_COMPOSITE_REFLECTIVITY = "LowLevelCompositeReflectivity"
+MRMS_MESH = "MESH"
+MRMS_MESH_MAX_120MIN = "MESH_Max_120min"
+MRMS_MESH_MAX_1440MIN = "MESH_Max_1440min"
+MRMS_MESH_MAX_240MIN = "MESH_Max_240min"
+MRMS_MESH_MAX_30MIN = "MESH_Max_30min"
+MRMS_MESH_MAX_360MIN = "MESH_Max_360min"
+MRMS_MESH_MAX_60MIN = "MESH_Max_60min"
+MRMS_MERGED_AZSHEAR_0M2KMAGL = "MergedAzShear_0-2kmAGL"
+MRMS_MERGED_AZSHEAR_3M6KMAGL = "MergedAzShear_3-6kmAGL"
+MRMS_MERGED_BASE_REFLECTIVITY = "MergedBaseReflectivity"
+MRMS_MERGED_BASE_REFLECTIVITY_QC = "MergedBaseReflectivityQC"
+MRMS_MERGED_REFLECTIVITY_AT_LOWEST_ALTITUDE = "MergedReflectivityAtLowestAltitude"
+MRMS_MERGED_REFLECTIVITY_COMPOSITE = "MergedReflectivityComposite"
+MRMS_MERGED_REFLECTIVITY_QC = "MergedReflectivityQC"
+MRMS_MERGED_REFLECTIVITY_QC_COMPOSITE = "MergedReflectivityQCComposite"
+MRMS_MERGED_REFLECTIVITY_Q_COMPOSITE = "MergedReflectivityQComposite"
+MRMS_MERGED_RHOHV = "MergedRhoHV"
+MRMS_MERGED_ZDR = "MergedZdr"
+MRMS_MODEL_0DEGC_HEIGHT = "Model_0degC_Height"
+MRMS_MODEL_SURFACE_TEMP = "Model_SurfaceTemp"
+MRMS_MODEL_WETBULB_TEMP = "Model_WetBulbTemp"
+MRMS_MULTI_SENSOR_QPE_01H_PASS1 = "MultiSensor_QPE_01H_Pass1"
+MRMS_MULTI_SENSOR_QPE_01H_PASS2 = "MultiSensor_QPE_01H_Pass2"
+MRMS_MULTI_SENSOR_QPE_03H_PASS1 = "MultiSensor_QPE_03H_Pass1"
+MRMS_MULTI_SENSOR_QPE_03H_PASS2 = "MultiSensor_QPE_03H_Pass2"
+MRMS_MULTI_SENSOR_QPE_06H_PASS1 = "MultiSensor_QPE_06H_Pass1"
+MRMS_MULTI_SENSOR_QPE_06H_PASS2 = "MultiSensor_QPE_06H_Pass2"
+MRMS_MULTI_SENSOR_QPE_12H_PASS1 = "MultiSensor_QPE_12H_Pass1"
+MRMS_MULTI_SENSOR_QPE_12H_PASS2 = "MultiSensor_QPE_12H_Pass2"
+MRMS_MULTI_SENSOR_QPE_24H_PASS1 = "MultiSensor_QPE_24H_Pass1"
+MRMS_MULTI_SENSOR_QPE_24H_PASS2 = "MultiSensor_QPE_24H_Pass2"
+MRMS_MULTI_SENSOR_QPE_48H_PASS1 = "MultiSensor_QPE_48H_Pass1"
+MRMS_MULTI_SENSOR_QPE_48H_PASS2 = "MultiSensor_QPE_48H_Pass2"
+MRMS_MULTI_SENSOR_QPE_72H_PASS1 = "MultiSensor_QPE_72H_Pass1"
+MRMS_MULTI_SENSOR_QPE_72H_PASS2 = "MultiSensor_QPE_72H_Pass2"
+MRMS_NLDN_CG_001MIN_AVG_DENSITY = "NLDN_CG_001min_AvgDensity"
+MRMS_NLDN_CG_005MIN_AVG_DENSITY = "NLDN_CG_005min_AvgDensity"
+MRMS_NLDN_CG_015MIN_AVG_DENSITY = "NLDN_CG_015min_AvgDensity"
+MRMS_NLDN_CG_030MIN_AVG_DENSITY = "NLDN_CG_030min_AvgDensity"
+MRMS_POSH = "POSH"
+MRMS_PRECIP_FLAG = "PrecipFlag"
+MRMS_PRECIP_RATE = "PrecipRate"
+MRMS_RADAR_ACCUMULATION_QUALITY_INDEX_01H = "RadarAccumulationQualityIndex_01H"
+MRMS_RADAR_ACCUMULATION_QUALITY_INDEX_03H = "RadarAccumulationQualityIndex_03H"
+MRMS_RADAR_ACCUMULATION_QUALITY_INDEX_06H = "RadarAccumulationQualityIndex_06H"
+MRMS_RADAR_ACCUMULATION_QUALITY_INDEX_12H = "RadarAccumulationQualityIndex_12H"
+MRMS_RADAR_ACCUMULATION_QUALITY_INDEX_24H = "RadarAccumulationQualityIndex_24H"
+MRMS_RADAR_ACCUMULATION_QUALITY_INDEX_48H = "RadarAccumulationQualityIndex_48H"
+MRMS_RADAR_ACCUMULATION_QUALITY_INDEX_72H = "RadarAccumulationQualityIndex_72H"
+MRMS_RADAR_ONLY_QPE_01H = "RadarOnly_QPE_01H"
+MRMS_RADAR_ONLY_QPE_03H = "RadarOnly_QPE_03H"
+MRMS_RADAR_ONLY_QPE_06H = "RadarOnly_QPE_06H"
+MRMS_RADAR_ONLY_QPE_12H = "RadarOnly_QPE_12H"
+MRMS_RADAR_ONLY_QPE_15M = "RadarOnly_QPE_15M"
+MRMS_RADAR_ONLY_QPE_24H = "RadarOnly_QPE_24H"
+MRMS_RADAR_ONLY_QPE_48H = "RadarOnly_QPE_48H"
+MRMS_RADAR_ONLY_QPE_72H = "RadarOnly_QPE_72H"
+MRMS_RADAR_ONLY_QPE_SINCE12Z = "RadarOnly_QPE_Since12Z"
+MRMS_RADAR_QUALITY_INDEX = "RadarQualityIndex"
+MRMS_REFLECTIVITY_AT_LOWEST_ALTITUDE = "ReflectivityAtLowestAltitude"
+MRMS_REFLECTIVITY_M10C = "Reflectivity_-10C"
+MRMS_REFLECTIVITY_M15C = "Reflectivity_-15C"
+MRMS_REFLECTIVITY_M20C = "Reflectivity_-20C"
+MRMS_REFLECTIVITY_M5C = "Reflectivity_-5C"
+MRMS_REFLECTIVITY_0C = "Reflectivity_0C"
+MRMS_ROTATION_TRACK_120MIN = "RotationTrack120min"
+MRMS_ROTATION_TRACK_1440MIN = "RotationTrack1440min"
+MRMS_ROTATION_TRACK_240MIN = "RotationTrack240min"
+MRMS_ROTATION_TRACK_30MIN = "RotationTrack30min"
+MRMS_ROTATION_TRACK_360MIN = "RotationTrack360min"
+MRMS_ROTATION_TRACK_60MIN = "RotationTrack60min"
+MRMS_ROTATION_TRACK_ML120MIN = "RotationTrackML120min"
+MRMS_ROTATION_TRACK_ML1440MIN = "RotationTrackML1440min"
+MRMS_ROTATION_TRACK_ML240MIN = "RotationTrackML240min"
+MRMS_ROTATION_TRACK_ML30MIN = "RotationTrackML30min"
+MRMS_ROTATION_TRACK_ML360MIN = "RotationTrackML360min"
+MRMS_ROTATION_TRACK_ML60MIN = "RotationTrackML60min"
+MRMS_SHI = "SHI"
+MRMS_SEAMLESS_HSR = "SeamlessHSR"
+MRMS_SEAMLESS_HSR_HEIGHT = "SeamlessHSRHeight"
+MRMS_SYNTHETIC_PRECIP_RATEID = "SyntheticPrecipRateID"
+MRMS_VII = "VII"
+MRMS_VIL = "VIL"
+MRMS_VIL_DENSITY = "VIL_Density"
+MRMS_VIL__MAX_120MIN = "VIL_Max_120min"
+MRMS_VIL__MAX_1440MIN = "VIL_Max_1440min"
+MRMS_WARM_RAIN_PROBABILITY = "WarmRainProbability"
+# =============================================================================
+# probsevere adheres to the GeoJSON FeatureCollection specification
+VALID_TIME = "validTime"
+COORDINATES = "coordinates"
+GEOMETRY = "geometry"
+FEATURES = "features"
+PROPERTIES = "properties"
+# the following are the properties of the probsevere data
+ID = "ID"
+PS = "PS"
+MU_CAPE = "MUCAPE"
+ML_CAPE = "MLCAPE"
+ML_CIN = "MLCIN"
+EB_SHEAR = "EBSHEAR"
+SRH01KM = "SRH01KM"
+MEAN_WIND_1_3KM_AGL = "MEANWIND_1-3kmAGL"
+MESH = "MESH"
+VIL_DENSITY = "VIL_DENSITY"
+FLASH_RATE = "FLASH_RATE"
+FLASH_DENSITY = "FLASH_DENSITY"
+MAX_LLAZ = "MAXLLAZ"
+P98_LLAZ = "P98LLAZ"
+P98_MLAZ = "P98MLAZ"
+MAXRC_EMISS = "MAXRC_EMISS"
+MAXRC_ICECF = "MAXRC_ICECF"
+WET_BULB_0C_HGT = "WETBULB_0C_HGT"
+PWAT = "PWAT"
+CAPE_M10M30 = "CAPE_M10M30"
+LJA = "LJA"
+SIZE = "SIZE"
+AVG_BEAM_HGT = "AVG_BEAM_HGT"
+MOTION_EAST = "MOTION_EAST"
+MOTION_SOUTH = "MOTION_SOUTH"
 
-PROBSEVERE_COLUMNS = (
-    ID,
-    VALID_TIME,
-    PS,
-    MU_CAPE,
-    ML_CAPE,
-    ML_CIN,
-    EB_SHEAR,
-    SRH01KM,
-    MEAN_WIND_1_3KM_AGL,
-    MESH,
-    VIL_DENSITY,
-    FLASH_RATE,
-    FLASH_DENSITY,
-    MAX_LLAZ,
-    P98_LLAZ,
-    P98_MLAZ,
-    MAXRC_EMISS,
-    MAXRC_ICECF,
-    WET_BULB_0C_HGT,
-    PWAT,
-    CAPE_M10M30,
-    LJA,
-    SIZE,
-    AVG_BEAM_HGT,
-    MOTION_EAST,
-    MOTION_SOUTH,
-    COORDINATES,
-) = cast_literal_list(list[ProbsevereColumn])
-# 20210601_000240
-PROBSEVERE_DATETIME_FORMAT = "%Y%m%d_%H%M%S UTC"
-
-PROBSEVERE_SCHEMA = {
+PROBSEVERE_SCHEMA: SchemaDict = {
+    ID: pl.Int32,
+    VALID_TIME: pl.Datetime,
+    PS: pl.Int32,
     MU_CAPE: pl.Int32,
     ML_CAPE: pl.Int32,
     ML_CIN: pl.Int32,
@@ -378,8 +208,7 @@ PROBSEVERE_SCHEMA = {
     AVG_BEAM_HGT: pl.Utf8,
     MOTION_EAST: pl.Float32,
     MOTION_SOUTH: pl.Float32,
-    PS: pl.Int32,
-    ID: pl.Int32,
-    VALID_TIME: pl.Datetime,
     COORDINATES: pl.List,
 }
+PROBSEVERE_DATETIME_FORMAT = "%Y%m%d_%H%M%S UTC"
+PROBSEVERE_COLUMNS = list(PROBSEVERE_SCHEMA.keys())
