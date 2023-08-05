@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import enum
+import os
 import sys
 from typing import (
     TYPE_CHECKING,
@@ -38,8 +39,10 @@ AnyT = TypeVar("AnyT", bound=Any)
 KeyT = TypeVar("KeyT", bound=Hashable)
 ValueT = TypeVar("ValueT")
 ScalarT = TypeVar("ScalarT", bound=Scalar)
-DictStr = dict[str, AnyT]
-DictStrAny = DictStr[Any]
+
+DictStr: TypeAlias = dict[str, AnyT]
+DictStrAny: TypeAlias = DictStr[Any]
+StrPath: TypeAlias = str | os.PathLike[str]
 
 
 def cast_literal_list(cls: type[ValueT]) -> ValueT:

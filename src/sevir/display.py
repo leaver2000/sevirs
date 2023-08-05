@@ -2,19 +2,25 @@
 """
 Creates plots of SEVIR events using cartopy library
 """
-import json
-import os
+from __future__ import annotations
+
 import re
 from typing import Any, Mapping, TypeAlias
 
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
+try:
+    import cartopy.crs as ccrs
+    import cartopy.feature as cfeature
+    from cartopy.crs import Globe
+except ImportError:
+    print("cartopy not installed")
+    ccrs = None
+    cfeature = None
+    Globe = None
 import matplotlib as mpl
 import matplotlib.figure
 import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
-from cartopy.crs import Globe
 from matplotlib.animation import FuncAnimation
 from matplotlib.colors import ListedColormap
 
@@ -34,11 +40,7 @@ from .constants import (
     ImageType,
 )
 
-NormalizedColorMap: TypeAlias = dict[str, mpl.colors.ListedColormap | mpl.colors.BoundaryNorm]
-
-# the previous color maps and boundaries we moved to a json file
-with open(os.path.join(os.path.dirname(__file__), "config.json"), "r") as f:
-    _config = json.load(f)
+NormalizedColorMap: TypeAlias = "dict[str, mpl.colors.ListedColormap | mpl.colors.BoundaryNorm]"
 
 
 # =====================================================================================================================
