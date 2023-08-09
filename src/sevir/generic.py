@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import abc
 import contextlib
+import dataclasses
 from typing import (
-    TYPE_CHECKING,
     Any,
+    Callable,
+    Concatenate,
     Final,
     Generic,
     Iterable,
+    ParamSpec,
     Protocol,
     TypeAlias,
     TypeVar,
@@ -22,9 +25,23 @@ import pyarrow as pa
 from polars.type_aliases import IntoExpr
 from typing_extensions import Self
 
+from .constants import (
+    EVENT_TYPE,
+    FILE_INDEX,
+    FILE_NAME,
+    FILE_REF,
+    ID,
+    IMG_TYPE,
+    TIME_UTC,
+    ImageType,
+)
+
 # =====================================================================================================================
 # - Type Variables
-_T = TypeVar("_T", bound=Any)
+# =====================================================================================================================
+_P = ParamSpec("_P")
+_T1 = TypeVar("_T1", bound=Any)
+_T2 = TypeVar("_T2", bound=Any)
 _T1_co = TypeVar("_T1_co", covariant=True)
 _T2_co = TypeVar("_T2_co", covariant=True)
 _ShapeProto_T = TypeVar("_ShapeProto_T", bound="ShapeAndSizeProtocol")
@@ -33,6 +50,7 @@ _FrameProto_T = TypeVar("_FrameProto_T", bound="FrameProtocol[Any, Any]")
 
 # =====================================================================================================================
 # - Protocols
+# =====================================================================================================================
 class ShapeAndSizeProtocol(Protocol):
     @property
     def shape(self) -> tuple[int, ...]:
@@ -58,30 +76,77 @@ class SupportsClose(Protocol):
 
 
 # =====================================================================================================================
-class GenericDataManager(Generic[_T]):
+# - Generics and Base Classes
+# =====================================================================================================================
+@dataclasses.dataclass
+class BaseConfig:
+    inputs: tuple[ImageType, ...]
+    targets: tuple[ImageType, ...]
+
+    def __post_init__(self) -> None:
+        self.inputs = tuple(self.inputs)
+        self.targets = tuple(self.targets)
+
+    def to_dict(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+class DataManager(Generic[_T1]):
     __slots__ = ("_data",)
 
-    if TYPE_CHECKING:
-        _data: Final[_T]  # type: ignore[misc]
-
     # - Constructors
-    def _manager(self, data: _T, *, inplace: bool, **kwargs: Any) -> Self:
+    def _manager(self, data: _T1 | Self, *, inplace: bool, **kwargs: Any) -> Self:
         if inplace:
             setattr(self, "_data", data)
         else:
             self = self.__class__(data, **kwargs)
         return self
 
-    def __init__(self, data: _T) -> None:
-        self._data = data
+    def __init__(self, data: _T1 | Self) -> None:
+        self._data: Final[_T1] = data.data if isinstance(data, DataManager) else data
 
     @property
-    def data(self) -> _T:
+    def data(self) -> _T1:
         return self._data
+
+    def pipe(self, __func: Callable[Concatenate[(Self, _P)], _T2], /, *args: _P.args, **kwargs: _P.kwargs) -> _T2:
+        """
+        ```python
+        m = GenericDataManager({"s": 1})
+
+        def func(mgr: GenericDataManager[dict[str, int]], x: int) -> int:
+            return mgr.data["s"] + x
+
+        n = m.pipe(func, 1) # type: int
+        ```
+        """
+        return __func(self, *args, **kwargs)
+
+    def __call__(
+        self, __func: Callable[Concatenate[(Self, _P)], _T1 | Self], /, *args: _P.args, **kwargs: _P.kwargs
+    ) -> Self:
+        """
+        Parameters
+        ----------
+        __func : Callable[Concatenate[(Self, _P)], _T1] a callable that takes an instance of a DataManager as its first
+        argument and returns either the underlying data or a new instance of a DataManager
+
+
+        ```python
+        def my_filter(self: sevir.Catalog) -> pl.DataFrame:
+            mask = self.id == "R18032505027684"
+            return self.data.filter(mask)
+
+        assert isinstance(catalog, sevir.Catalog)
+        ```
+        """
+
+        data = self.pipe(__func, *args, **kwargs)
+        return self._manager(data, inplace=False)
 
 
 # - Generic Adapters [NDArrays, Series, Tensors, DataFrames, etc.]
-class GenericDataAdapter(GenericDataManager[_ShapeProto_T]):
+class DataAdapter(DataManager[_ShapeProto_T]):
     # - Properties
     @property
     def shape(self) -> tuple[int, ...]:
@@ -103,7 +168,7 @@ class GenericDataAdapter(GenericDataManager[_ShapeProto_T]):
 
 # =====================================================================================================================
 # - DataFrames Adapters
-class GenericFrameAdapter(GenericDataAdapter[_FrameProto_T], Generic[_FrameProto_T, _T1_co, _T2_co]):
+class FrameAdapter(DataAdapter[_FrameProto_T], Generic[_FrameProto_T, _T1_co, _T2_co]):
     @property
     def columns(self) -> _T1_co:
         return self.data.columns
@@ -121,7 +186,7 @@ MultiColSelector: TypeAlias = "slice | range | list[int] | list[str] | list[bool
 
 
 # - polars.DataFrame
-class PolarsAdapter(GenericFrameAdapter[pl.DataFrame, list[str], list[pl.PolarsDataType]]):
+class PolarsAdapter(FrameAdapter[pl.DataFrame, list[str], list[pl.PolarsDataType]]):
     # - Selection Methods
     def select(self, *columns: str) -> Self:
         return self._manager(self.data.select(*columns), inplace=False)
@@ -130,9 +195,6 @@ class PolarsAdapter(GenericFrameAdapter[pl.DataFrame, list[str], list[pl.PolarsD
         self, *exprs: IntoExpr | Iterable[IntoExpr], inplace: bool = False, **named_exprs: IntoExpr
     ) -> Self:
         return self._manager(self.data.with_columns(*exprs, **named_exprs), inplace=inplace)
-
-    #    def groupby(self, by: MultiColSelector) -> Self:
-    #       return self._manager(self.data.groupby(by), inplace=False)
 
     # - Transformations
     def to_polars(self) -> pl.DataFrame:
@@ -198,7 +260,7 @@ class PolarsAdapter(GenericFrameAdapter[pl.DataFrame, list[str], list[pl.PolarsD
 
 
 # - pandas.DataFrame
-class PandasAdapter(GenericFrameAdapter[pd.DataFrame, pd.Index | pd.MultiIndex, pd.Series]):
+class PandasAdapter(FrameAdapter[pd.DataFrame, pd.Index | pd.MultiIndex, pd.Series]):
     def to_polars(self) -> pl.DataFrame:
         return pl.from_pandas(self.data)
 
@@ -211,7 +273,7 @@ class PandasAdapter(GenericFrameAdapter[pd.DataFrame, pd.Index | pd.MultiIndex, 
 
 # =====================================================================================================================
 # - Abstract Classes
-class AbstractContextManager(contextlib.AbstractContextManager[_T]):
+class AbstractContextManager(contextlib.AbstractContextManager[_T1]):
     """
     ```
     import io
@@ -234,3 +296,42 @@ class AbstractContextManager(contextlib.AbstractContextManager[_T]):
     @abc.abstractmethod
     def close(self) -> None:
         ...
+
+
+class AbstractCatalog(abc.ABC):
+    @property
+    @abc.abstractmethod
+    def data(self) -> pl.DataFrame:
+        ...
+
+    @property
+    def columns(self) -> list[str]:
+        return self.data.columns
+
+    @property
+    def id(self) -> pl.Series:  # noqa: A003
+        return self.data[ID]
+
+    @property
+    def file_name(self) -> pl.Series:
+        return self.data[FILE_NAME]
+
+    @property
+    def file_index(self) -> pl.Series:
+        return self.data[FILE_INDEX]
+
+    @property
+    def file_ref(self) -> pl.Series:
+        return self.data[FILE_REF]
+
+    @property
+    def img_type(self) -> pl.Series:
+        return self.data[IMG_TYPE]
+
+    @property
+    def event_type(self) -> pl.Series:
+        return self.data[EVENT_TYPE]
+
+    @property
+    def time_utc(self) -> pl.Series:
+        return self.data[TIME_UTC]

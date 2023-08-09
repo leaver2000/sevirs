@@ -14,7 +14,6 @@ import os
 import shutil
 import tempfile
 import zipfile
-from typing import Any
 
 import polars as pl
 import requests
@@ -25,9 +24,9 @@ from .constants import (
     COORDINATES,
     FEATURES,
     GEOMETRY,
-    IASTATE_FILE_FORMAT,
-    IASTATE_PATH_FORMAT,
-    IASTATE_URL,
+    IA_STATE_FILE_FORMAT,
+    IA_STATE_PATH_FORMAT,
+    IA_STATE_URL,
     ID,
     MAXRC_EMISS,
     MAXRC_ICECF,
@@ -39,20 +38,23 @@ from .constants import (
 )
 
 
-def download(save_to: str = ".", *, date: datetime.datetime) -> str | None:
+def download(save_to: str = ".", *, date: datetime.datetime, force: bool = False) -> str | None:
     # - source
     if not os.path.exists(save_to):
         logging.info(f"🌩️ Creating {save_to} 🌩️")
         os.makedirs(save_to)
-    path = date.strftime(IASTATE_PATH_FORMAT)
-    name = date.strftime(IASTATE_FILE_FORMAT)
-    url = f"{IASTATE_URL}/{path}/{name}"
+    path = date.strftime(IA_STATE_PATH_FORMAT)
+    name = date.strftime(IA_STATE_FILE_FORMAT)
+    url = f"{IA_STATE_URL}/{path}/{name}"
 
     # - destination
     dest = os.path.join(save_to, name)
-    if os.path.exists(dest):
-        logging.info(f"🌩️ {dest} already exists 🌩️")
-        return dest
+    if os.path.isfile(dest):
+        if force:
+            logging.info(f"🌩️ Overwriting {dest} 🌩️")
+        else:
+            logging.info(f"🌩️ {dest} already exists 🌩️")
+            return dest
 
     # - download
     logging.info(f"🌩️ Downloading {url} 🌩️")
@@ -113,15 +115,15 @@ class IAStateZipFile(zipfile.ZipFile):
         return [self.extract(f, path) for f in s.filter(s.str.contains("ProbSevere"))]
 
 
-def read(obj: Any) -> pl.DataFrame:
+def read(obj: str | list[str]) -> pl.DataFrame:
     if isinstance(obj, str):
         if os.path.isdir(obj):
-            files = [os.path.join(obj, f) for f in os.listdir(obj)]
-            return read_many_probsevere(files)
+            return read_many_probsevere([os.path.join(obj, src) for src in os.listdir(obj) if src.endswith(".json")])
+
         elif obj.endswith(".zip"):
-            with IAStateZipFile(obj) as f:
-                with tempfile.TemporaryDirectory() as d:
-                    files = f.extract_probsevere(d)
+            with IAStateZipFile(obj) as src:
+                with tempfile.TemporaryDirectory() as tmp:
+                    files = src.extract_probsevere(tmp)
                     df = read_many_probsevere(files)
                     return df
         else:

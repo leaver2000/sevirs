@@ -1,10 +1,11 @@
 import os
 
-os.environ["PATH_TO_SEVIR"] = "/mnt/data/c/sevir"
+os.environ["PATH_TO_SEVIR"] = "/mnt/data/sevir"
 
 import pytest
-from sevir.catalog import Catalog
-from sevir.h5 import H5Store
+
+from sevir.core.catalog import Catalog
+from sevir.core.h5 import Store
 
 
 @pytest.fixture(scope="session")
@@ -13,5 +14,5 @@ def catalog() -> Catalog:
 
 
 @pytest.fixture(scope="session")
-def store(catalog: Catalog) -> H5Store:
-    return H5Store(catalog)
+def store(catalog: Catalog) -> Store:
+    return Store(catalog)
