@@ -51,7 +51,7 @@ def squarespace(
     """
     >>> import numpy as np
     >>> import sevir.core.h5
-    >>> points, grid = sevir.core.h5.squarespace(4,6)
+    >>> points, grid = sevir.core.h5.squarespace(4, 6)
     >>> points
     (array([0.        , 0.08333333, 0.16666667, 0.25      ]), array([0.        , 0.08333333, 0.16666667, 0.25      ]))
     >>> grid
@@ -74,11 +74,8 @@ def squarespace(
 
 def interpatch(arr: Array[Nd[N, N, N], AnyT], *, patch_size: int) -> Array[Nd[N, N, N], AnyT]:
     """
-    Interpolate the values of a 4D array to a new PatchSize
-
-    assumes a 4D array with shape (B, L, W, T) where L == W, reshapes the array
-    and interpolates the array to (B, lxl, lxl, T) using
-    scipy.interpolate.RegularGridInterpolator.
+    Interpolate the first two equally shaped dimensions of an array to the new `patch_size`.
+    using `scipy.interpolate.RegularGridInterpolator`.
 
     >>> import numpy as np
     >>> import sevir.core.h5
@@ -87,8 +84,10 @@ def interpatch(arr: Array[Nd[N, N, N], AnyT], *, patch_size: int) -> Array[Nd[N,
     (768, 768, 49)
     """
     x, y = arr.shape[:2]
-    if not x == y:
+    if not x == y:  # first two dimensions must be equal
         raise ValueError(f"array must be square, but got shape: {arr.shape}")
+    if x == patch_size == y:  # no interpolation needed
+        return arr
     points, values = squarespace(x, patch_size)
     interp = RegularGridInterpolator(points, arr)
     return interp(values).astype(arr.dtype)
