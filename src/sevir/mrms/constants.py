@@ -1,10 +1,13 @@
+from typing import Final
+
 import polars as pl
 from polars.type_aliases import SchemaDict
 
-IASTATE_URL = "https://mrms.agron.iastate.edu"
-IASTATE_PATH_FORMAT = "%Y/%m/%d"
-IASTATE_FILE_FORMAT = "%Y%m%d%H.zip"
-# =============================================================================
+IA_STATE_URL = "https://mrms.agron.iastate.edu"
+IA_STATE_PATH_FORMAT = "%Y/%m/%d"
+IA_STATE_FILE_FORMAT = "%Y%m%d%H.zip"
+
+# =====================================================================================================================
 # these are the types needed to access the MRMS data within the IAState zip file
 MRMS_BREF_1HR_MAX = "BREF_1HR_MAX"
 MRMS_BRIGHT_BAND_BOTTOM_HEIGHT = "BrightBandBottomHeight"
@@ -14,7 +17,7 @@ MRMS_ECHO_TOP_18 = "EchoTop_18"
 MRMS_ECHO_TOP_30 = "EchoTop_30"
 MRMS_ECHO_TOP_50 = "EchoTop_50"
 MRMS_ECHO_TOP_60 = "EchoTop_60"
-MRMS_FLASH_CREST_MAX_SOILSAT = "FLASH_CREST_MAXSOILSAT"
+MRMS_FLASH_CREST_MAX_SOIL_SAT = "FLASH_CREST_MAXSOILSAT"
 MRMS_FLASH_CREST_MAX_STREAM_FLOW = "FLASH_CREST_MAXSTREAMFLOW"
 MRMS_FLASH_CREST_MAX_UNIT_STREAM_FLOW = "FLASH_CREST_MAXUNITSTREAMFLOW"
 MRMS_FLASH_HP_MAX_STREAM_FLOW = "FLASH_HP_MAXSTREAMFLOW"
@@ -30,7 +33,7 @@ MRMS_FLASH_QPE_FFG01H = "FLASH_QPE_FFG01H"
 MRMS_FLASH_QPE_FFG03H = "FLASH_QPE_FFG03H"
 MRMS_FLASH_QPE_FFG06H = "FLASH_QPE_FFG06H"
 MRMS_FLASH_QPE_FFG_MAX = "FLASH_QPE_FFGMAX"
-MRMS_FLASH_SAC_MAX_SOILSAT = "FLASH_SAC_MAXSOILSAT"
+MRMS_FLASH_SAC_MAX_SOIL_SAT = "FLASH_SAC_MAXSOILSAT"
 MRMS_FLASH_SAC_MAX_STREAM_FLOW = "FLASH_SAC_MAXSTREAMFLOW"
 MRMS_FLASH_SAC_MAX_UNIT_STREAM_FLOW = "FLASH_SAC_MAXUNITSTREAMFLOW"
 MRMS_GAUGE_INFL_INDEX_01H_PASS1 = "GaugeInflIndex_01H_Pass1"
@@ -54,7 +57,7 @@ MRMS_H60_ABOVE_0C = "H60_Above_0C"
 MRMS_HEIGHT_COMPOSITE_REFLECTIVITY = "HeightCompositeReflectivity"
 MRMS_HEIGHT_LOW_LEVEL_COMPOSITE_REFLECTIVITY = "HeightLowLevelCompositeReflectivity"
 MRMS_LVL3_HREET = "LVL3_HREET"
-MRMS_LVL3_HIGHRES_VIL = "LVL3_HighResVIL"
+MRMS_LVL3_HIGH_RES_VIL = "LVL3_HighResVIL"
 MRMS_LAYER_COMPOSITE_REFLECTIVITY_ANC = "LayerCompositeReflectivity_ANC"
 MRMS_LAYER_COMPOSITE_REFLECTIVITY_HIGH = "LayerCompositeReflectivity_High"
 MRMS_LAYER_COMPOSITE_REFLECTIVITY_LOW = "LayerCompositeReflectivity_Low"
@@ -67,8 +70,8 @@ MRMS_MESH_MAX_240MIN = "MESH_Max_240min"
 MRMS_MESH_MAX_30MIN = "MESH_Max_30min"
 MRMS_MESH_MAX_360MIN = "MESH_Max_360min"
 MRMS_MESH_MAX_60MIN = "MESH_Max_60min"
-MRMS_MERGED_AZSHEAR_0M2KMAGL = "MergedAzShear_0-2kmAGL"
-MRMS_MERGED_AZSHEAR_3M6KMAGL = "MergedAzShear_3-6kmAGL"
+MRMS_MERGED_AZ_SHEAR_0_2KM_AGL = "MergedAzShear_0-2kmAGL"
+MRMS_MERGED_AZ_SHEAR_3_6KM_AGL = "MergedAzShear_3-6kmAGL"
 MRMS_MERGED_BASE_REFLECTIVITY = "MergedBaseReflectivity"
 MRMS_MERGED_BASE_REFLECTIVITY_QC = "MergedBaseReflectivityQC"
 MRMS_MERGED_REFLECTIVITY_AT_LOWEST_ALTITUDE = "MergedReflectivityAtLowestAltitude"
@@ -76,11 +79,11 @@ MRMS_MERGED_REFLECTIVITY_COMPOSITE = "MergedReflectivityComposite"
 MRMS_MERGED_REFLECTIVITY_QC = "MergedReflectivityQC"
 MRMS_MERGED_REFLECTIVITY_QC_COMPOSITE = "MergedReflectivityQCComposite"
 MRMS_MERGED_REFLECTIVITY_Q_COMPOSITE = "MergedReflectivityQComposite"
-MRMS_MERGED_RHOHV = "MergedRhoHV"
+MRMS_MERGED_RHO_HV = "MergedRhoHV"
 MRMS_MERGED_ZDR = "MergedZdr"
 MRMS_MODEL_0DEGC_HEIGHT = "Model_0degC_Height"
 MRMS_MODEL_SURFACE_TEMP = "Model_SurfaceTemp"
-MRMS_MODEL_WETBULB_TEMP = "Model_WetBulbTemp"
+MRMS_MODEL_WET_BULB_TEMP = "Model_WetBulbTemp"
 MRMS_MULTI_SENSOR_QPE_01H_PASS1 = "MultiSensor_QPE_01H_Pass1"
 MRMS_MULTI_SENSOR_QPE_01H_PASS2 = "MultiSensor_QPE_01H_Pass2"
 MRMS_MULTI_SENSOR_QPE_03H_PASS1 = "MultiSensor_QPE_03H_Pass1"
@@ -140,20 +143,23 @@ MRMS_ROTATION_TRACK_ML60MIN = "RotationTrackML60min"
 MRMS_SHI = "SHI"
 MRMS_SEAMLESS_HSR = "SeamlessHSR"
 MRMS_SEAMLESS_HSR_HEIGHT = "SeamlessHSRHeight"
-MRMS_SYNTHETIC_PRECIP_RATEID = "SyntheticPrecipRateID"
+MRMS_SYNTHETIC_PRECIP_RATE_ID = "SyntheticPrecipRateID"
 MRMS_VII = "VII"
 MRMS_VIL = "VIL"
 MRMS_VIL_DENSITY = "VIL_Density"
 MRMS_VIL__MAX_120MIN = "VIL_Max_120min"
 MRMS_VIL__MAX_1440MIN = "VIL_Max_1440min"
 MRMS_WARM_RAIN_PROBABILITY = "WarmRainProbability"
-# =============================================================================
+
+
+# =====================================================================================================================
 # probsevere adheres to the GeoJSON FeatureCollection specification
 VALID_TIME = "validTime"
 COORDINATES = "coordinates"
 GEOMETRY = "geometry"
 FEATURES = "features"
 PROPERTIES = "properties"
+
 # the following are the properties of the probsevere data
 ID = "ID"
 PS = "PS"
@@ -181,7 +187,7 @@ AVG_BEAM_HGT = "AVG_BEAM_HGT"
 MOTION_EAST = "MOTION_EAST"
 MOTION_SOUTH = "MOTION_SOUTH"
 
-PROBSEVERE_SCHEMA: SchemaDict = {
+PROBSEVERE_SCHEMA: Final[SchemaDict] = {
     ID: pl.Int32,
     VALID_TIME: pl.Datetime,
     PS: pl.Int32,

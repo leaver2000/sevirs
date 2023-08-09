@@ -3,14 +3,25 @@ __all__ = [
     "TensorGenerator",
     "TensorLoader",
     "H5File",
-    "H5Store",
-    "catalog",
-    "datasets",
+    "Store",
+    "ImageType",
     "constants",
-    "h5",
-    "display",
+    "plot",
 ]
-from . import catalog, constants, datasets, display, h5
-from .catalog import Catalog
-from .datasets import TensorGenerator, TensorLoader
-from .h5 import H5File, H5Store
+from . import constants
+from .constants import ImageType
+from .core.catalog import Catalog
+from .core.datasets import TensorGenerator, TensorLoader
+from .core.h5 import H5File, Store
+
+try:
+    import cartopy.crs  # noqa: F401
+
+    from .core import plot
+except ImportError:
+
+    class _dummy:
+        def __getattr__(self, item):
+            raise ImportError(f"Could not import {item} from cartopy.crs")
+
+    plot = _dummy()  # type: ignore[assignment]

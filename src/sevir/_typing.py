@@ -1,37 +1,38 @@
 # flake8: noqa
+"""
+Type hints for the sevir package.
+
+Note:
+-----
+To avoid circular imports if this module needs to import anything from sevir,
+the import should be accomplished conditionally under `TYPE_CHECKING` ie:
+
+```
+if TYPE_CHECKING:
+    from .core.catalog import Catalog
+```
+"""
 from __future__ import annotations
 
 import enum
 import os
 import sys
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Generic,
-    Hashable,
-    SupportsIndex,
-    TypeAlias,
-    TypeVar,
-    get_args,
-)
+from typing import TYPE_CHECKING, Any, Generic, Hashable, TypeAlias, TypeVar, get_args
 
 import numpy as np
 import pandas as pd
-from pandas._typing import HashableT, Scalar
+import polars as pl
+from pandas._typing import Scalar
 
 if sys.version_info < (3, 11):
     from typing_extensions import TypeVarTuple, Unpack
 else:
     from typing import Self, TypeVarTuple, Unpack
-
 if TYPE_CHECKING:
-    from pandas._typing import IndexType, MaskType
-    from pandas.core.indexing import _IndexSliceTuple
+    from .core.catalog import Catalog
 else:
-    _IndexSliceTuple = Any
-    IndexType = Any
-    MaskType = Any
+    Catalog = Any
+
 
 # =====================================================================================================================
 Ts = TypeVarTuple("Ts")
@@ -43,21 +44,28 @@ ScalarT = TypeVar("ScalarT", bound=Scalar)
 DictStr: TypeAlias = dict[str, AnyT]
 DictStrAny: TypeAlias = DictStr[Any]
 StrPath: TypeAlias = str | os.PathLike[str]
+CatalogData: TypeAlias = "Catalog | pl.DataFrame | pd.DataFrame | StrPath"
 
 
-def cast_literal_list(cls: type[ValueT]) -> ValueT:
+def cast_literal_list(cls: type[AnyT]) -> AnyT:
     """
     >>> Numbers = typing.Literal[1, 2, 3]
     >>> NUM_LIST = ONE, TWO, THREE = cast_literal_list(list[Numbers])
     >>> NUM_LIST
     [1, 2, 3]
     """
-    return list(get_args(get_args(cls)[0]))  # type: ignore[return-value]
+    (literal,) = get_args(cls)
+    values = get_args(literal)
+    return list(values)  # type: ignore[return-value]
 
 
 # =====================================================================================================================
 class Nd(Generic[Unpack[Ts]]):
-    """type alias for a tuple of ints or slices
+    """A declarative class for annotating the Number of dimensions in a
+    `numpy` array.
+
+    Example:
+    --------
     >>> import numpy as np
     >>> from sevir._typing import Nd
     >>> a: np.ndarray[Nd[2, 2], np.int64] = np.array([[1, 2], [3, 4]])
@@ -75,23 +83,3 @@ Array: TypeAlias = np.ndarray[_NdT, np.dtype[AnyT]]
 >>> reveal_type(a)
 Runtime type is 'ndarray'
 """
-
-
-# =====================================================================================================================
-ColumnIndexerType: TypeAlias = """(
-slice
-| HashableT
-| IndexType
-| MaskType
-| Callable[[pd.DataFrame], IndexType | MaskType | list[HashableT]]
-| list[HashableT]
-)"""
-LocIndexerType: TypeAlias = """(
-    int
-    | ColumnIndexerType
-    | tuple[
-        IndexType | MaskType | list[HashableT] | slice | _IndexSliceTuple | Callable,
-        list[HashableT] | slice | pd.Series[bool] | Callable
-    ]
-)"""
-ImageIndexerType: TypeAlias = "slice | int | SupportsIndex"
