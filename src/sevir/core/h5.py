@@ -84,7 +84,7 @@ def interpatch(arr: Array[Nd[N, N, N], AnyT], *, patch_size: int) -> Array[Nd[N,
     (768, 768, 49)
     """
     x, y = arr.shape[:2]
-    if not x == y:  # first two dimensions must be equal
+    if x != y:  # first two dimensions must be equal
         raise ValueError(f"array must be square, but got shape: {arr.shape}")
     if x == patch_size == y:  # no interpolation needed
         return arr
@@ -273,9 +273,7 @@ class Store(
             self.pick(img_t, fref, id_, fidx) for img_t, fref, fidx in self.iter_indices(id_, img_types=img_types)
         ]
 
-        if metadata:
-            return arrays, self.data.filter(self.id == id_)
-        return arrays
+        return (arrays, self.data.filter(self.id == id_)) if metadata else arrays
 
     # - Mapping interface
     def __getitem__(self, id_: str | bytes) -> list[Array[Nd[N, N, N], np.int16]]:
@@ -328,18 +326,22 @@ class Store(
         if not isinstance(img_ids, list):
             img_ids = [img_ids]
 
-        data_vars = {}
-
-        # logging.info(f"🌩️ Interpolating {len(img_ids)} images to patch size: {patch_size} 🌩️")
-        # bar = tqdm.tqdm(total=len(img_ids))
-        for id_ in img_ids:
-            data_vars[id_] = (["c", "x", "y", "t"], self.interp_stack(id_, patch_size=patch_size))
+        data_vars = {
+            id_: (
+                ["c", "x", "y", "t"],
+                self.interp_stack(id_, patch_size=patch_size),
+            )
+            for id_ in img_ids
+        }
         #   bar.update(1)
         # bar.close()
 
         coords = {
             "channel": (["c"], [str(t) for t in self.types]),
-            "patch": (["x", "y"], np.arange(0, patch_size * patch_size).reshape(patch_size, patch_size)),
+            "patch": (
+                ["x", "y"],
+                np.arange(0, patch_size**2).reshape(patch_size, patch_size),
+            ),
             "time": (["t"], DEFAULT_FRAME_TIMES),
         }
 
