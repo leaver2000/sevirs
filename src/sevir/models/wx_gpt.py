@@ -325,7 +325,7 @@ class GPT(nn.Module):
         except ImportError:
             raise ImportError("transformers must be installed to load pretrained weights")
 
-        logging.info("loading weights from pretrained gpt: %s" % model_type)
+        logging.info(f"loading weights from pretrained gpt: {model_type}")
 
         # n_layer, n_head and n_embd are determined from model_type
         config_args = {
@@ -377,7 +377,7 @@ class GPT(nn.Module):
 
     def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
         # start with all of the candidate parameters
-        param_dict = {pn: p for pn, p in self.named_parameters()}
+        param_dict = dict(self.named_parameters())
         # filter out those that do not require grad
         param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
         # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
@@ -398,7 +398,7 @@ class GPT(nn.Module):
         # Create AdamW optimizer and use the fused version if it is available
         fused_available = "fused" in inspect.signature(torch.optim.AdamW).parameters
         use_fused = fused_available and device_type == "cuda"
-        extra_args = dict(fused=True) if use_fused else dict()
+        extra_args = dict(fused=True) if use_fused else {}
         optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
         logging.info(f"using fused AdamW: {use_fused}")
 
@@ -417,8 +417,7 @@ class GPT(nn.Module):
         # express our flops throughput as ratio of A100 bfloat16 peak flops
         flops_achieved = flops_per_iter * (1.0 / dt)  # per second
         flops_promised = 312e12  # A100 GPU bfloat16 peak flops is 312 TFLOPS
-        mfu = flops_achieved / flops_promised
-        return mfu
+        return flops_achieved / flops_promised
 
     @torch.no_grad()
     def generate(
