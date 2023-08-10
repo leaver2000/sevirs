@@ -142,12 +142,7 @@ class FeatureGenerator(SequentialGenerator[str, TensorPair]):
         x, y = [Store(cat) for cat in data.intersect(inputs, targets)]
         assert set(x.id) == set(y.id)
         assert len(img_types) == (len(x.types) + len(y.types))
-        super().__init__(
-            x.id.unique().to_list(),
-            img_types=img_types,
-            patch_size=patch_size,
-        )
-
+        super().__init__(x.id.unique().to_list(), img_types, patch_size)
         self.x = x
         self.y = y
 
@@ -183,7 +178,7 @@ class TimeSeriesGenerator(SequentialGenerator[tuple[str, int], TensorPair]):
         self,
         data: CatalogData = DEFAULT_PATH_TO_SEVIR,
         *,
-        img_type: tuple[ImageType, ...],
+        img_types: tuple[ImageType, ...],
         catalog: str | None = None,
         data_dir: str | None = None,
         patch_size: PatchSize = "upscale",
@@ -191,14 +186,16 @@ class TimeSeriesGenerator(SequentialGenerator[tuple[str, int], TensorPair]):
         n_inputs: int = 5,
         n_targets: int = 5,
     ) -> None:
-        store = Store(Catalog(data, img_types=img_type, catalog=catalog, data_dir=data_dir))
+        if not isinstance(data, Catalog):
+            data = Catalog(data, img_types=img_types, catalog=catalog, data_dir=data_dir)
+        store = Store(data)
         indices = itertools.product(
             store.id.unique(),
             (i for i in range(0, n_time, n_inputs) if i + n_inputs + n_targets <= n_time),
         )
-        super().__init__(indices, img_type, patch_size)
-
+        super().__init__(indices, img_types, patch_size)
         self.store = store
+        # time indices
         self.n_time = n_time
         self.n_inputs = n_inputs
         self.n_targets = n_targets
@@ -212,6 +209,7 @@ class TimeSeriesGenerator(SequentialGenerator[tuple[str, int], TensorPair]):
         y_stop = y_start + self.n_targets
 
         arr = self.store.interp(img_id, patch_size=self.patch_size)
+
         x = arr[..., x_start:x_stop]
         y = arr[..., y_start:y_stop]
         return (torch.from_numpy(x), torch.from_numpy(y))
