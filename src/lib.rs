@@ -3,6 +3,22 @@ use rand::Rng;
 use std::cmp::Ordering;
 use std::io;
 
+
+// Feature = tuple[
+//     tuple[int, int, int],
+//     tuple[int, int, int],
+//     tuple[int, int, int],
+// ]
+
+// def engineer_features(arr: np.ndarray) -> list[Feature]:
+//     x, y = arr.shape  # (PATCH_SIZE, PATCH_SIZE)
+//     return [tuple(map(tuple, arr[i : i + 3, j : j + 3])) for i in range(x) for j in range(y)]
+
+
+// data = engineer_features(arr[:, :, 0])
+// # np.array([[list(d) for d in x] for x in data[:5]])
+
+
 #[pyfunction]
 fn guess() {
     println!("Guess the number!");
