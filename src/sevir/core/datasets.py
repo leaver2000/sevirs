@@ -80,9 +80,7 @@ class SequentialGenerator(IterableDataset[ValueT], AbstractContextManager, Gener
 
     def select(self, index: IndexT, *, metadata: bool = False) -> ValueT | tuple[ValueT, pl.DataFrame]:
         values = self.pick(index)
-        if metadata:
-            return values, self.get_metadata(index)
-        return values
+        return (values, self.get_metadata(index)) if metadata else values
 
     @overload  # type: ignore[misc]
     def iterate(self, *, metadata: Literal[False] = False) -> Iterable[ValueT]:
