@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import multiprocessing.pool
 import os
+from collections.abc import Sequence
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -84,7 +85,7 @@ def interpatch(arr: Array[Nd[N, N, N], AnyT], *, patch_size: int) -> Array[Nd[N,
     (768, 768, 49)
     """
     x, y = arr.shape[:2]
-    if not x == y:  # first two dimensions must be equal
+    if x != y:  # first two dimensions must be equal
         raise ValueError(f"array must be square, but got shape: {arr.shape}")
     if x == patch_size == y:  # no interpolation needed
         return arr
@@ -142,7 +143,7 @@ def reshape_lightning(
     return np.bincount(lwt, minlength=np.prod(shape)).reshape(shape).astype(np.int16)
 
 
-class H5File(h5py.File):
+class FileReader(h5py.File):
     """subclass of h5py.File that provides a few convenience methods for SEVIR files and __reduce__ to allow
     for pickling which is required for multiprocessing."""
 
@@ -168,9 +169,7 @@ class H5File(h5py.File):
         return super().__getitem__(ID)[...]  # type: ignore[unused-ignore]
 
 
-class Store(
-    Mapping[str | bytes, list[Array[Nd[N, N, N], np.int16]]], AbstractCatalog, AbstractContextManager["Store"]
-):
+class Store(Mapping[str | bytes, list[Array[Nd[N, N, N], np.int16]]], AbstractCatalog, AbstractContextManager):
     """
     the dataset effectively maps the following structure:
     >>> data[FILE_REF][IMG_TYPE][EVENT_ID][FILE_INDEX, L, W, T]
@@ -180,7 +179,7 @@ class Store(
 
     __slots__ = ("_files", "catalog", "normalization")
     if TYPE_CHECKING:
-        _files: list[H5File]
+        _files: list[FileReader]
         catalog: Catalog
         normalization: dict[ImageType, tuple[int, int]] | None
 
@@ -210,7 +209,7 @@ class Store(
                 pl.when(cat.file_name == file_n).then(len(self._files)).otherwise(cat.file_ref).alias(FILE_REF),
                 inplace=True,
             )
-            self._files.append(H5File(file_n, img_t))
+            self._files.append(FileReader(file_n, img_t))
 
             bar.update(1)
         bar.close()
@@ -245,8 +244,8 @@ class Store(
         return len(self._files) == 0
 
     # =================================================================================================================
-    def pick(self, img_type: ImageType, fref: int, id_: str, fidx: int) -> Array[Nd[N, N, N], np.int16]:
-        arr = self._files[fref].select(id_, fidx)
+    def pick(self, img_type: ImageType, img_id: str, file_ref: int, file_idx: int) -> Array[Nd[N, N, N], np.int16]:
+        arr = self._files[file_ref].select(img_id, file_idx)
         if self.normalization is not None:
             arr = self.normalize(arr, *self.normalization[img_type])
         return arr
@@ -254,32 +253,29 @@ class Store(
     # - Methods
     @overload  # type: ignore[misc]
     def select(
-        self, id_: str | bytes, *, img_types: Collection[ImageType] | None = None, metadata: Literal[False] = False
+        self, img_id: str | bytes, *, img_types: Sequence[ImageType] | None = None, metadata: Literal[False] = False
     ) -> list[Array[Nd[N, N, N], np.int16]]:
         ...
 
     @overload
     def select(
-        self, id_: str | bytes, *, img_types: Collection[ImageType] | None = None, metadata: Literal[True] = True
+        self, img_id: str | bytes, *, img_types: Sequence[ImageType] | None = None, metadata: Literal[True] = True
     ) -> tuple[list[Array[Nd[N, N, N], np.int16]], pl.DataFrame]:
         ...
 
     def select(
-        self, id_: str | bytes, *, img_types: Collection[ImageType] | None = None, metadata: bool = False
+        self, img_id: str | bytes, *, img_types: Sequence[ImageType] | None = None, metadata: bool = False
     ) -> list[Array[Nd[N, N, N], np.int16]] | tuple[list[Array[Nd[N, N, N], np.int16]], pl.DataFrame]:
-        if isinstance(id_, bytes):
-            id_ = id_.decode("utf-8")
-        arrays = [
-            self.pick(img_t, fref, id_, fidx) for img_t, fref, fidx in self.iter_indices(id_, img_types=img_types)
-        ]
+        if isinstance(img_id, bytes):
+            img_id = img_id.decode("utf-8")
 
-        if metadata:
-            return arrays, self.data.filter(self.id == id_)
-        return arrays
+        arrays = list(self.iter_arrays(img_id, img_types=img_types))
+
+        return (arrays, self.data.filter(self.id == img_id)) if metadata else arrays
 
     # - Mapping interface
-    def __getitem__(self, id_: str | bytes) -> list[Array[Nd[N, N, N], np.int16]]:
-        return self.select(id_)
+    def __getitem__(self, img_id: str | bytes) -> list[Array[Nd[N, N, N], np.int16]]:
+        return self.select(img_id)
 
     def __len__(self) -> int:
         return len(self._files)
@@ -287,10 +283,20 @@ class Store(
     def __iter__(self) -> Iterator[bytes]:
         return iter(set(self.catalog.id))
 
+    def iter_arrays(
+        self, img_id: str | bytes, *, img_types: Collection[ImageType] | None = None
+    ) -> Iterator[Array[Nd[N, N, N], np.int16]]:
+        if isinstance(img_id, bytes):
+            img_id = img_id.decode("utf-8")
+        yield from (
+            self.pick(img_t, img_id, fref, fidx)
+            for img_t, fref, fidx in self.iter_indices(img_id, img_types=img_types)
+        )
+
     def iter_files(self) -> Iterator[tuple[str, ImageType]]:
         columns = pl.col(FILE_NAME), pl.col(IMG_TYPE)
         df = self.data.select(columns)
-        return df.unique(subset=FILE_NAME).iter_rows()  # type: ignore[return-value]
+        yield from df.unique(subset=FILE_NAME).iter_rows()  # type: ignore[misc]
 
     def iter_indices(
         self, id_: str, *, img_types: Collection[ImageType] | None = None
@@ -300,24 +306,24 @@ class Store(
         columns = pl.col(IMG_TYPE), pl.col(FILE_REF), pl.col(FILE_INDEX)
         df = self.data.select(columns)
         return (
-            df.filter((self.catalog.id == id_) & (self.img_type.is_in(img_types))).sort(
-                pl.col(IMG_TYPE).map_dict({t: i for i, t in enumerate(img_types)}), descending=False
-            )
-            # .drop(IMG_TYPE)
+            df.filter((self.catalog.id == id_) & (self.img_type.is_in(img_types)))
+            .sort(pl.col(IMG_TYPE).map_dict({t: i for i, t in enumerate(img_types)}), descending=False)
             .iter_rows()  # type: ignore[return-value]
         )
 
-    # =================================================================================================================
-    def interp_stack(
-        self, img_id: str | bytes, *, patch_size: int = DEFAULT_PATCH_SIZE
+    def interp(
+        self,
+        img_id: str | bytes,
+        *,
+        patch_size: int = DEFAULT_PATCH_SIZE,
+        img_types: Sequence[ImageType] | None = None,
     ) -> Array[Nd[N, N, N, N], np.int16]:
         """Interpolates `(X, Y)` to the desired patch size
         `list[Array[X, Y, T]] -> Array[C, X, Y, T]` to the provided patch_size"""
-        arrays = [
-            arr if img_t.patch_size == patch_size else interpatch(arr, patch_size=patch_size)
-            for img_t, arr in zip(self.types, self.select(img_id))
-        ]
+        arrays = [interpatch(arr, patch_size=patch_size) for arr in self.iter_arrays(img_id, img_types=img_types)]
         return np.stack(arrays, axis=0)
+
+    # =================================================================================================================
 
     def to_xarray(
         self,
@@ -328,18 +334,22 @@ class Store(
         if not isinstance(img_ids, list):
             img_ids = [img_ids]
 
-        data_vars = {}
-
-        # logging.info(f"🌩️ Interpolating {len(img_ids)} images to patch size: {patch_size} 🌩️")
-        # bar = tqdm.tqdm(total=len(img_ids))
-        for id_ in img_ids:
-            data_vars[id_] = (["c", "x", "y", "t"], self.interp_stack(id_, patch_size=patch_size))
+        data_vars = {
+            id_: (
+                ["c", "x", "y", "t"],
+                self.interp(id_, patch_size=patch_size),
+            )
+            for id_ in img_ids
+        }
         #   bar.update(1)
         # bar.close()
 
         coords = {
             "channel": (["c"], [str(t) for t in self.types]),
-            "patch": (["x", "y"], np.arange(0, patch_size * patch_size).reshape(patch_size, patch_size)),
+            "patch": (
+                ["x", "y"],
+                np.arange(0, patch_size**2).reshape(patch_size, patch_size),
+            ),
             "time": (["t"], DEFAULT_FRAME_TIMES),
         }
 
