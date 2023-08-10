@@ -74,7 +74,8 @@ all = [
 [tool.maturin] # https://www.maturin.rs/
 # "extension-module" tells pyo3 we want to build an extension module (skips linking against libpython.so)
 # features = ["pyo3/extension-module"]
-python-source = "python"
+# python-source = "python"
+features = ["pyo3/extension-module"]
 module-name = "sevir._lib"
 # include = [{ path = "sevir/**/*", format = "sdist" }]
 # bindings = "cffi"
