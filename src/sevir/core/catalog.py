@@ -6,7 +6,6 @@ from typing import Any, Collection, Final
 import numpy as np
 import pandas as pd
 import polars as pl
-from polars.dataframe.frame import DataFrame
 from polars.type_aliases import IntoExpr
 from typing_extensions import Self
 
@@ -40,6 +39,7 @@ def read(
     data: StrPath | None = None,
     img_types: Collection[ImageType] | None = None,
     extract_projection: bool = False,
+    drop_duplicates: bool = True,
 ) -> pl.DataFrame:
     """
     ```
@@ -76,7 +76,9 @@ def read(
     df = pl.read_csv(src_catalog, dtypes=CATALOG_SCHEMA, null_values=[""], use_pyarrow=True)
     df = df if img_types is None else subset(df, img_types)
     df = df.with_columns(df[FILE_NAME].apply(lambda s: os.path.join(src_data, s)))
-
+    if drop_duplicates:
+        # TODO: rather than dropping the ID's the images should be joined together in the x/y dimension
+        df = df.groupby([ID, IMG_TYPE]).first()
     if extract_projection:
         proj = pl.from_pandas(
             df[PROJ].to_pandas().str.extract(PROJECTION_REGEX).astype({"lat": float, "lon": float, "a": float})
@@ -99,16 +101,17 @@ class Catalog(PolarsAdapter, AbstractCatalog):
 
     # - Initialization
     def _manager(  # type: ignore[override]
-        self, data: DataFrame, *, inplace: bool, img_types: tuple[ImageType, ...] | None = None, **kwargs: Any
+        self, data: pl.DataFrame, *, inplace: bool, img_types: tuple[ImageType, ...] | None = None, **kwargs: Any
     ) -> Self:
         return super()._manager(data, inplace=inplace, img_types=img_types or self.types, **kwargs)
 
     @staticmethod
     def _constructor(
-        src: CatalogData = DEFAULT_PATH_TO_SEVIR,
-        img_types: tuple[ImageType, ...] | None = None,
-        catalog: str | None = None,
-        data_dir: str | None = None,
+        src: CatalogData,
+        img_types: tuple[ImageType, ...] | None,
+        catalog: str | None,
+        data_dir: str | None,
+        drop_duplicates: bool,
     ) -> tuple[pl.DataFrame, tuple[ImageType, ...]]:
         # - fast path
         if isinstance(src, Catalog):
@@ -122,7 +125,7 @@ class Catalog(PolarsAdapter, AbstractCatalog):
 
         # - construction
         if isinstance(src, str):
-            data = read(src, catalog=catalog, data=data_dir, img_types=img_types)
+            data = read(src, catalog=catalog, data=data_dir, img_types=img_types, drop_duplicates=drop_duplicates)
         elif isinstance(src, pd.DataFrame):
             data = pl.from_pandas(src)
         elif isinstance(src, pl.DataFrame):
@@ -141,18 +144,17 @@ class Catalog(PolarsAdapter, AbstractCatalog):
         img_types: tuple[ImageType, ...] | None = None,
         catalog: str | None = None,
         data_dir: str | None = None,
+        drop_duplicates: bool = True,
     ) -> None:
         # - unpack
-        data, types = self._constructor(data, img_types, catalog, data_dir)
+        data, types = self._constructor(data, img_types, catalog, data_dir, drop_duplicates)
 
         # - copy the data and initialize the catalog
         super().__init__(data.with_columns(**{FILE_REF: None}))
         self.types: Final[tuple[ImageType, ...]] = types
 
     # - Methods
-    def _where(
-        self, col: CatalogColumn, value: EventType | ImageType | Collection[EventType | ImageType]
-    ) -> pl.DataFrame:
+    def _where(self, col: CatalogColumn, value: str | Collection[str]) -> pl.DataFrame:
         series = self.data[col]
         predicate = series.is_in(value) if not isinstance(value, str) else series == value
         return self.data.filter(predicate)
@@ -167,11 +169,9 @@ class Catalog(PolarsAdapter, AbstractCatalog):
         return self._manager(df, inplace=inplace)
 
     def get_by_img_type(self, img_types: ImageType | Collection[ImageType], inplace=False) -> Catalog:
-        return self._manager(
-            self._where(IMG_TYPE, img_types),
-            img_types=tuple((img_types,) if isinstance(img_types, str) else img_types),
-            inplace=inplace,
-        )
+        df = self._where(IMG_TYPE, img_types)
+        img_types = tuple((img_types,) if isinstance(img_types, str) else img_types)
+        return self._manager(df, img_types=img_types, inplace=inplace)
 
     def get_by_event(self, event: EventType | Collection[EventType], inplace: bool = False) -> Catalog:
         return self.where(EVENT_TYPE, event, inplace=inplace)
@@ -192,14 +192,6 @@ class Catalog(PolarsAdapter, AbstractCatalog):
             self._manager(df_y, inplace=False, img_types=y),
         )
 
-    def with_projection(self) -> pl.DataFrame:
-        from .plot import parse_projection
-
-        return pl.concat(
-            [self.data.drop([PROJ]), pl.DataFrame(self.data[PROJ].apply(parse_projection).to_list())],
-            how="horizontal",
-        )
-
     # =================================================================================================================
     # - File Reference
     def with_reference(self, ref: IntoExpr, *, inplace=False) -> Catalog:
@@ -210,3 +202,17 @@ class Catalog(PolarsAdapter, AbstractCatalog):
 
     def close(self) -> None:
         self.with_reference(None, inplace=True)
+
+    # =================================================================================================================
+    # - Experimental
+    def get_projection(self) -> pl.DataFrame:
+        proj = self[PROJ].to_pandas().str.extract(PROJECTION_REGEX).astype({"lat": float, "lon": float, "a": float})
+        return pl.from_pandas(proj)
+
+    def with_projection(self) -> pl.DataFrame:
+        from .plot import parse_projection
+
+        return pl.concat(
+            [self.data.drop([PROJ]), pl.DataFrame(self.data[PROJ].apply(parse_projection).to_list())],
+            how="horizontal",
+        )

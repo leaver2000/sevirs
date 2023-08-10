@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import abc
-import contextlib
 import dataclasses
 from typing import (
     Any,
     Callable,
+    Collection,
     Concatenate,
     Final,
     Generic,
@@ -273,7 +273,7 @@ class PandasAdapter(FrameAdapter[pd.DataFrame, pd.Index | pd.MultiIndex, pd.Seri
 
 # =====================================================================================================================
 # - Abstract Classes
-class AbstractContextManager(contextlib.AbstractContextManager[_T1]):
+class AbstractContextManager(abc.ABC):
     """
     ```
     import io
@@ -289,6 +289,10 @@ class AbstractContextManager(contextlib.AbstractContextManager[_T1]):
     print(len(x.data))
     ```
     """
+
+    def __enter__(self) -> Self:
+        """Return `self` upon entering the runtime context."""
+        return self
 
     def __exit__(self, *_) -> None:
         self.close()
@@ -335,3 +339,8 @@ class AbstractCatalog(abc.ABC):
     @property
     def time_utc(self) -> pl.Series:
         return self.data[TIME_UTC]
+
+    def date_range(self, img_ids: Collection[str], periods: int = 49, freq: int = 5) -> pd.DatetimeIndex:
+        arr = self.time_utc.filter(self.id.is_in(img_ids)).to_numpy()
+        arr = np.c_[arr, arr + np.timedelta64(freq * periods, "m")]
+        return pd.DatetimeIndex(arr)

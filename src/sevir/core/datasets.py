@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import itertools
 import logging
 from typing import (
     TYPE_CHECKING,
@@ -8,12 +9,14 @@ from typing import (
     Callable,
     Final,
     Generic,
+    Hashable,
     Iterable,
     Iterator,
     Literal,
     Sequence,
     TypeVar,
     overload,
+    Annotated,
 )
 
 import polars as pl
@@ -29,71 +32,93 @@ from ..generic import AbstractContextManager
 from .catalog import Catalog
 from .h5 import Store
 
-T = TypeVar("T")
+DEFAULT_PATCH_SIZE: PatchSize = "upscale"  # "downscale"
 
+ValueT = TypeVar("ValueT")
+IndexT = TypeVar("IndexT", bound=Hashable)
+DatasetT = TypeVar("DatasetT", "FeatureGenerator", "TimeSeriesGenerator")
 
-class AbstractDataset(IterableDataset[T], abc.ABC, Generic[T]):
-    def __init__(self, img_ids: list[str]) -> None:
-        self.img_ids: Final[list[str]] = img_ids
-        super().__init__()
-
-    @overload  # type: ignore[misc]
-    @abc.abstractmethod
-    def select(self, img_id: str, *, metadata: Literal[False] = False) -> T:
-        ...
-
-    @overload
-    @abc.abstractmethod
-    def select(self, img_id: str, *, metadata: Literal[True] = True) -> tuple[T, pl.DataFrame]:
-        ...
-
-    @abc.abstractmethod
-    def select(self, img_id: str, *, metadata: bool = False) -> T | tuple[T, pl.DataFrame]:
-        ...
-
-    def __getitem__(self, index: int) -> T:
-        id_ = self.img_ids[index]
-        return self.select(id_)
-
-    @abc.abstractmethod
-    def close(self) -> None:
-        ...
-
-    # =================================================================================================================
-    @abc.abstractmethod
-    def get_metadata(self, img_id: str | None = None) -> pl.DataFrame:
-        ...
-
-    def group_by(self, by: str | IntoExpr) -> Iterable[Sequence[T]]:
-        raise NotImplementedError
-
-    # =================================================================================================================
-    @overload  # type: ignore[misc]
-    def iterate(self, *, metadata: Literal[False] = False) -> Iterable[T]:
-        ...
-
-    @overload
-    def iterate(self, *, metadata: Literal[True] = True) -> Iterable[tuple[T, pl.DataFrame]]:
-        ...
-
-    def iterate(self, *, metadata: bool = False) -> Iterable[T | tuple[T, pl.DataFrame]]:
-        logging.info("🏃 Iterating over Dataset 🏃")
-        for img_id in tqdm.tqdm(self.img_ids):
-            yield self.select(img_id, metadata=metadata)  # type: ignore[call-overload]
-
-    def __iter__(self) -> Iterator[T]:
-        yield from self.iterate(metadata=False)
-
-
-# =====================================================================================================================
+PatchSize = int | Literal["upscale", "downscale"]
 TensorPair = tuple[Tensor, Tensor]
 
 
-class TensorGenerator(AbstractDataset[TensorPair], AbstractContextManager["TensorGenerator"]):
+class SequentialGenerator(IterableDataset[ValueT], AbstractContextManager, Generic[IndexT, ValueT]):
+    # metadata:Mapping[IndexT, pl.DataFrame]
+    def __init__(
+        self, indices: Iterable[IndexT], img_types: Sequence[ImageType], patch_size: PatchSize = DEFAULT_PATCH_SIZE
+    ) -> None:
+        super().__init__()
+        # indices
+        self.indices: Final[tuple[IndexT, ...]] = tuple(indices)
+        assert len(self.indices) == len(set(self.indices)), "Indices must be unique"
+
+        # patch_size
+        if not isinstance(patch_size, int):
+            p_sizes = (img_type.patch_size for img_type in img_types)
+            patch_size = max(p_sizes) if patch_size == "upscale" else min(p_sizes)
+        self.patch_size: Final[int] = patch_size
+
+    # =================================================================================================================
+    # - abstract methods
+    @abc.abstractmethod
+    def pick(self, index: IndexT) -> ValueT:
+        ...
+
+    @abc.abstractmethod
+    def get_metadata(self, img_id: IndexT | None = None) -> pl.DataFrame:
+        ...
+
+    # =================================================================================================================
+    # - overloads
+    @overload  # type: ignore[misc]
+    def select(self, index: IndexT, *, metadata: Literal[False] = False) -> ValueT:
+        ...
+
+    @overload
+    def select(self, index: IndexT, *, metadata: Literal[True] = True) -> tuple[ValueT, pl.DataFrame]:
+        ...
+
+    def select(self, index: IndexT, *, metadata: bool = False) -> ValueT | tuple[ValueT, pl.DataFrame]:
+        values = self.pick(index)
+        if metadata:
+            return values, self.get_metadata(index)
+        return values
+
+    @overload  # type: ignore[misc]
+    def iterate(self, *, metadata: Literal[False] = False) -> Iterable[ValueT]:
+        ...
+
+    @overload
+    def iterate(self, *, metadata: Literal[True] = True) -> Iterable[tuple[ValueT, pl.DataFrame]]:
+        ...
+
+    def iterate(self, *, metadata: bool = False) -> Iterable[ValueT | tuple[ValueT, pl.DataFrame]]:
+        logging.info("🏃 Iterating over Dataset 🏃")
+        for index in tqdm.tqdm(self.indices):
+            yield self.select(index, metadata=metadata)  # type: ignore[call-overload]
+
+    # =================================================================================================================
+    # - dunder methods
+    def __getitem__(self, idx: int) -> ValueT:
+        return self.pick(self.indices[idx])
+
+    def __iter__(self) -> Iterator[ValueT]:
+        yield from self.iterate(metadata=False)
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    # =================================================================================================================
+    # - not implemented
+    def groupby(self, by: str | IntoExpr) -> Iterable[Sequence[ValueT]]:
+        raise NotImplementedError
+
+
+# =====================================================================================================================
+class FeatureGenerator(SequentialGenerator[str, TensorPair]):
     if TYPE_CHECKING:
         x: Store
         y: Store
-        patch_size: int
 
     def __init__(
         self,
@@ -103,7 +128,7 @@ class TensorGenerator(AbstractDataset[TensorPair], AbstractContextManager["Tenso
         targets: tuple[ImageType, ...],
         catalog: str | None = None,
         data_dir: str | None = None,
-        patch_size: int | Literal["upscale", "downscale"] = "upscale",
+        patch_size: PatchSize = "upscale",
     ) -> None:
         img_types = inputs + targets
 
@@ -112,65 +137,105 @@ class TensorGenerator(AbstractDataset[TensorPair], AbstractContextManager["Tenso
 
         if not isinstance(data, Catalog):
             data = Catalog(data, img_types=img_types, catalog=catalog, data_dir=data_dir)
-        # the patch size is used to interpolate the so all the images fit.
-        if not isinstance(patch_size, int):
-            p_sizes = (img_type.patch_size for img_type in img_types)
-            patch_size = max(p_sizes) if patch_size == "upscale" else min(p_sizes)
 
         # the catalog is split into inputs and targets
         x, y = [Store(cat) for cat in data.intersect(inputs, targets)]
         assert set(x.id) == set(y.id)
         assert len(img_types) == (len(x.types) + len(y.types))
+        super().__init__(
+            x.id.unique().to_list(),
+            img_types=img_types,
+            patch_size=patch_size,
+        )
 
-        super().__init__(x.id.unique().to_list())
-        self.patch_size = patch_size
         self.x = x
         self.y = y
 
     # =================================================================================================================
-    @overload  # type: ignore[misc]
-    def select(self, img_id: str, *, metadata: Literal[False] = False) -> TensorPair:
-        ...
+    # - abstract method interface
+    def pick(self, index: Annotated[str, "The `img_id` for the event."]) -> TensorPair:
+        x = self.x.interp(index, patch_size=self.patch_size)
+        y = self.y.interp(index, patch_size=self.patch_size)
+        return torch.from_numpy(x), torch.from_numpy(y)
 
-    @overload
-    def select(self, img_id: str, *, metadata: Literal[True] = True) -> tuple[TensorPair, pl.DataFrame]:
-        ...
-
-    def select(self, img_id: str, *, metadata: bool = False) -> TensorPair | tuple[TensorPair, pl.DataFrame]:
-        x = self.x.interp_stack(img_id, patch_size=self.patch_size)
-        y = self.y.interp_stack(img_id, patch_size=self.patch_size)
-        tensors = torch.from_numpy(x), torch.from_numpy(y)
-        if metadata is True:
-            return tensors, self.get_metadata(img_id)
-        return tensors
-
-    # =================================================================================================================
-    def close(self) -> None:
-        logging.info("🏪 Closing Store 🏪")
-        self.x.close()
-        self.y.close()
-
-    def get_metadata(self, img_id: str | None = None) -> pl.DataFrame:
-        if img_id is None:
+    def get_metadata(self, index: str | None = None) -> pl.DataFrame:
+        if index is None:
             frames = [self.x.data, self.y.data]
         else:
             frames = [
-                self.x.data.filter(self.x.id == img_id),
-                self.y.data.filter(self.y.id == img_id),
+                self.x.data.filter(self.x.id == index),
+                self.y.data.filter(self.y.id == index),
             ]
         return pl.concat(frames).sort(
             pl.col(IMG_TYPE).map_dict({v: i for i, v in enumerate(self.x.types + self.y.types)}),
         )
 
+    def close(self) -> None:
+        logging.info("🏪 Closing Store 🏪")
+        self.x.close()
+        self.y.close()
 
-class TensorLoader(DataLoader[TensorPair]):
+    # =================================================================================================================
+
+
+class TimeSeriesGenerator(SequentialGenerator[tuple[str, int], TensorPair]):
+    def __init__(
+        self,
+        data: CatalogData = DEFAULT_PATH_TO_SEVIR,
+        *,
+        img_type: tuple[ImageType, ...],
+        catalog: str | None = None,
+        data_dir: str | None = None,
+        patch_size: PatchSize = "upscale",
+        n_time: int = 49,
+        n_inputs: int = 5,
+        n_targets: int = 5,
+    ) -> None:
+        store = Store(Catalog(data, img_types=img_type, catalog=catalog, data_dir=data_dir))
+        indices = itertools.product(
+            store.id.unique(),
+            (i for i in range(0, n_time, n_inputs) if i + n_inputs + n_targets <= n_time),
+        )
+        super().__init__(indices, img_type, patch_size)
+
+        self.store = store
+        self.n_time = n_time
+        self.n_inputs = n_inputs
+        self.n_targets = n_targets
+
+    # =================================================================================================================
+    # - abstract method interface
+    def pick(self, index: tuple[str, int]) -> TensorPair:
+        img_id, x_start = index
+        x_stop = x_start + self.n_inputs
+        y_start = x_stop + 1
+        y_stop = y_start + self.n_targets
+
+        arr = self.store.interp(img_id, patch_size=self.patch_size)
+        x = arr[..., x_start:x_stop]
+        y = arr[..., y_start:y_stop]
+        return (torch.from_numpy(x), torch.from_numpy(y))
+
+    def get_metadata(self, index: tuple[str, int] | None = None) -> pl.DataFrame:
+        if index is None:
+            return self.store.data
+        img_id, stop = index
+        return self.store.data.filter((self.store.id == img_id))  # & (self.store.time == self.time_idx.index(stop)),
+
+    def close(self) -> None:
+        self.store.close()
+
+    # =================================================================================================================
+
+
+class TensorLoader(DataLoader[TensorPair], Generic[DatasetT]):
     if TYPE_CHECKING:
-        dataset: TensorGenerator
+        dataset: FeatureGenerator
         __iter__: Callable[..., Iterator[TensorPair]]  # type: ignore
 
     def __init__(
         self,
-        dataset: AbstractDataset,
+        dataset: DatasetT,
         batch_size: int | None = 1,
         shuffle: bool | None = None,
         sampler: Sampler | Iterable | None = None,

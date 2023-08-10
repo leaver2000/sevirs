@@ -1,8 +1,9 @@
 __all__ = [
     "Catalog",
-    "TensorGenerator",
+    "TimeSeriesGenerator",
+    "FeatureGenerator",
     "TensorLoader",
-    "H5File",
+    "FileReader",
     "Store",
     "ImageType",
     "constants",
@@ -11,8 +12,8 @@ __all__ = [
 from . import constants
 from .constants import ImageType
 from .core.catalog import Catalog
-from .core.datasets import TensorGenerator, TensorLoader
-from .core.h5 import H5File, Store
+from .core.datasets import FeatureGenerator, TensorLoader, TimeSeriesGenerator
+from .core.h5 import FileReader, Store
 
 try:
     import cartopy.crs  # noqa: F401
