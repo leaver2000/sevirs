@@ -17,7 +17,17 @@ from __future__ import annotations
 import enum
 import os
 import sys
-from typing import TYPE_CHECKING, Any, Generic, Hashable, TypeAlias, TypeVar, get_args
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    Hashable,
+    Literal,
+    Sequence,
+    TypeAlias,
+    TypeVar,
+    get_args,
+)
 
 import numpy as np
 import pandas as pd
@@ -27,11 +37,13 @@ from pandas._typing import Scalar
 if sys.version_info < (3, 11):
     from typing_extensions import TypeVarTuple, Unpack
 else:
-    from typing import Self, TypeVarTuple, Unpack
-if TYPE_CHECKING:
-    from .core.catalog import Catalog
+    from typing import TypeVarTuple, Unpack
+if TYPE_CHECKING:  # avoid circular imports
+    from .constants import ImageType as _ImageType
+    from .core.catalog import Catalog as _Catalog
 else:
-    Catalog = Any
+    _Catalog = Any
+    _ImageType = Any
 
 
 # =====================================================================================================================
@@ -44,7 +56,13 @@ ScalarT = TypeVar("ScalarT", bound=Scalar)
 DictStr: TypeAlias = dict[str, AnyT]
 DictStrAny: TypeAlias = DictStr[Any]
 StrPath: TypeAlias = str | os.PathLike[str]
-CatalogData: TypeAlias = "Catalog | pl.DataFrame | pd.DataFrame | StrPath"
+CatalogData: TypeAlias = "_Catalog | pl.DataFrame | pd.DataFrame | StrPath"
+PatchSize: TypeAlias = int | Literal["upscale", "downscale"]
+
+ImageName: TypeAlias = "Literal['vis', 'vil', 'ir069', 'ir107', 'lght'] | _ImageType"
+ImageLike: TypeAlias = "_ImageType | ImageName"
+ImageTypes: TypeAlias = "tuple[_ImageType, ...]"
+ImageSequence: TypeAlias = "Sequence[ImageName]"
 
 
 def cast_literal_list(cls: type[AnyT]) -> AnyT:
@@ -83,3 +101,27 @@ Array: TypeAlias = np.ndarray[_NdT, np.dtype[AnyT]]
 >>> reveal_type(a)
 Runtime type is 'ndarray'
 """
+# =====================================================================================================================
+from typing import TypedDict
+
+from matplotlib.colors import Colormap, Normalize
+
+
+class ImageShowConfig(TypedDict, total=False):
+    # X: Unknown,
+    cmap: str | Colormap | None
+    norm: Normalize | None
+    aspect: float | Literal["equal", "auto"] | None
+    interpolation: str | None
+    alpha: float | np.ndarray | None
+    vmin: float | None
+    vmax: float | None
+    origin: Literal["upper", "lower"] | None
+    extent: Sequence[float] | None
+
+    interpolation_stage: Literal["data", "rgba"] | None
+    filternorm: bool
+    filterrad: float
+    resample: bool | None
+    url: str | None
+    # **kwargs: Unknown

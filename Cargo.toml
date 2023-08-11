@@ -1,0 +1,12 @@
+[package]
+name = "sevirs"
+version = "0.0.1"
+edition = "2021"
+
+[lib]
+name = "_lib"
+crate-type = ["cdylib"]
+
+[dependencies]
+rand = "0.8.4"
+pyo3 = "0.19.0"

@@ -4,7 +4,7 @@ import sys
 
 from .constants import ImageType
 from .core.catalog import Catalog
-from .core.datasets import TensorGenerator, TensorLoader
+from .core.datasets import FeatureGenerator, TensorLoader
 from .models.wx_gpt import GPTConfig
 
 
@@ -12,7 +12,7 @@ def main(config: GPTConfig, patch_size=48, batch_size=2) -> int:
     logging.basicConfig(level=logging.INFO)
     logging.info(f"config: {config}")
     with TensorLoader(
-        TensorGenerator(
+        FeatureGenerator(
             Catalog(
                 "/mnt/data/sevir",
                 img_types=config.inputs + config.targets,

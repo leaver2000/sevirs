@@ -5,6 +5,7 @@ import itertools
 import logging
 from typing import (
     TYPE_CHECKING,
+    Annotated,
     Any,
     Callable,
     Final,
@@ -16,7 +17,6 @@ from typing import (
     Sequence,
     TypeVar,
     overload,
-    Annotated,
 )
 
 import polars as pl
@@ -26,19 +26,23 @@ from polars.type_aliases import IntoExpr
 from torch import Tensor
 from torch.utils.data import DataLoader, IterableDataset, Sampler
 
-from .._typing import CatalogData
-from ..constants import DEFAULT_PATH_TO_SEVIR, IMG_TYPE, ImageType
+from .._typing import CatalogData, PatchSize
+from ..constants import (
+    DEFAULT_CATALOG,
+    DEFAULT_DATA,
+    DEFAULT_N_FRAMES,
+    DEFAULT_PATCH_SIZE,
+    DEFAULT_PATH_TO_SEVIR,
+    IMG_TYPE,
+    ImageType,
+)
 from ..generic import AbstractContextManager
 from .catalog import Catalog
 from .h5 import Store
 
-DEFAULT_PATCH_SIZE: PatchSize = "upscale"  # "downscale"
-
 ValueT = TypeVar("ValueT")
 IndexT = TypeVar("IndexT", bound=Hashable)
 DatasetT = TypeVar("DatasetT", "FeatureGenerator", "TimeSeriesGenerator")
-
-PatchSize = int | Literal["upscale", "downscale"]
 TensorPair = tuple[Tensor, Tensor]
 
 
@@ -116,19 +120,16 @@ class SequentialGenerator(IterableDataset[ValueT], AbstractContextManager, Gener
 
 # =====================================================================================================================
 class FeatureGenerator(SequentialGenerator[str, TensorPair]):
-    if TYPE_CHECKING:
-        x: Store
-        y: Store
-
     def __init__(
         self,
         data: CatalogData = DEFAULT_PATH_TO_SEVIR,
         *,
         inputs: tuple[ImageType, ...],
         targets: tuple[ImageType, ...],
-        catalog: str | None = None,
-        data_dir: str | None = None,
-        patch_size: PatchSize = "upscale",
+        catalog: str | None = DEFAULT_CATALOG,
+        data_dir: str | None = DEFAULT_DATA,
+        patch_size: PatchSize = DEFAULT_PATCH_SIZE,
+        maintain_order: bool = False,
     ) -> None:
         img_types = inputs + targets
 
@@ -138,18 +139,16 @@ class FeatureGenerator(SequentialGenerator[str, TensorPair]):
         if not isinstance(data, Catalog):
             data = Catalog(data, img_types=img_types, catalog=catalog, data_dir=data_dir)
 
-        # the catalog is split into inputs and targets
+        # - store
         x, y = [Store(cat) for cat in data.intersect(inputs, targets)]
-        assert set(x.id) == set(y.id)
-        assert len(img_types) == (len(x.types) + len(y.types))
-        super().__init__(
-            x.id.unique().to_list(),
-            img_types=img_types,
-            patch_size=patch_size,
-        )
+        assert set(x.id) == set(y.id) and len(img_types) == (len(x.types) + len(y.types))
 
-        self.x = x
-        self.y = y
+        # - indices
+        indices = x.id.unique(maintain_order=maintain_order)
+
+        super().__init__(indices, img_types, patch_size)
+        self.x: Final[Store] = x
+        self.y: Final[Store] = y
 
     # =================================================================================================================
     # - abstract method interface
@@ -175,31 +174,37 @@ class FeatureGenerator(SequentialGenerator[str, TensorPair]):
         self.x.close()
         self.y.close()
 
-    # =================================================================================================================
-
 
 class TimeSeriesGenerator(SequentialGenerator[tuple[str, int], TensorPair]):
     def __init__(
         self,
         data: CatalogData = DEFAULT_PATH_TO_SEVIR,
         *,
-        img_type: tuple[ImageType, ...],
-        catalog: str | None = None,
-        data_dir: str | None = None,
-        patch_size: PatchSize = "upscale",
-        n_time: int = 49,
+        img_types: tuple[ImageType, ...],
+        catalog: str | None = DEFAULT_CATALOG,
+        data_dir: str | None = DEFAULT_DATA,
+        patch_size: PatchSize = DEFAULT_PATCH_SIZE,
+        n_frames: int = DEFAULT_N_FRAMES,
         n_inputs: int = 5,
         n_targets: int = 5,
+        maintain_order: bool = False,
     ) -> None:
-        store = Store(Catalog(data, img_types=img_type, catalog=catalog, data_dir=data_dir))
-        indices = itertools.product(
-            store.id.unique(),
-            (i for i in range(0, n_time, n_inputs) if i + n_inputs + n_targets <= n_time),
-        )
-        super().__init__(indices, img_type, patch_size)
+        if not isinstance(data, Catalog):
+            data = Catalog(data, img_types=img_types, catalog=catalog, data_dir=data_dir)
 
+        # - store
+        store = Store(data)
+
+        # - indices
+        indices: itertools.product[tuple[str, int]] = itertools.product(
+            store.id.unique(maintain_order=maintain_order),
+            (i for i in range(0, n_frames, n_inputs) if i + n_inputs + n_targets <= n_frames),
+        )
+        super().__init__(indices, img_types, patch_size)
         self.store = store
-        self.n_time = n_time
+
+        # time slice parameters
+        self.n_frames = n_frames
         self.n_inputs = n_inputs
         self.n_targets = n_targets
 
@@ -212,11 +217,13 @@ class TimeSeriesGenerator(SequentialGenerator[tuple[str, int], TensorPair]):
         y_stop = y_start + self.n_targets
 
         arr = self.store.interp(img_id, patch_size=self.patch_size)
+
         x = arr[..., x_start:x_stop]
         y = arr[..., y_start:y_stop]
         return (torch.from_numpy(x), torch.from_numpy(y))
 
     def get_metadata(self, index: tuple[str, int] | None = None) -> pl.DataFrame:
+        raise NotImplementedError
         if index is None:
             return self.store.data
         img_id, stop = index
@@ -225,12 +232,10 @@ class TimeSeriesGenerator(SequentialGenerator[tuple[str, int], TensorPair]):
     def close(self) -> None:
         self.store.close()
 
-    # =================================================================================================================
 
-
-class TensorLoader(DataLoader[TensorPair], Generic[DatasetT]):
+class TensorLoader(DataLoader[TensorPair], AbstractContextManager, Generic[DatasetT]):
     if TYPE_CHECKING:
-        dataset: FeatureGenerator
+        dataset: DatasetT
         __iter__: Callable[..., Iterator[TensorPair]]  # type: ignore
 
     def __init__(
@@ -272,8 +277,5 @@ class TensorLoader(DataLoader[TensorPair], Generic[DatasetT]):
             pin_memory_device=pin_memory_device,
         )
 
-    def __enter__(self) -> TensorLoader:
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
+    def close(self) -> None:
         self.dataset.close()

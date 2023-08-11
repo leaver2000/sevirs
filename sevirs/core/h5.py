@@ -23,7 +23,7 @@ import tqdm
 import xarray as xr
 from scipy.interpolate import RegularGridInterpolator
 
-from .._typing import AnyT, Array, N, Nd
+from .._typing import AnyT, Array, ImageName, ImageSequence, ImageTypes, N, Nd
 from ..constants import (
     DEFAULT_CATALOG,
     DEFAULT_DATA,
@@ -94,7 +94,7 @@ def interpatch(arr: Array[Nd[N, N, N], AnyT], *, patch_size: int) -> Array[Nd[N,
     return interp(values).astype(arr.dtype)
 
 
-def reshape_lightning(
+def interp_lightning(
     data: Array[Nd[N, Literal[5]], Any],
     *,
     patch_size: int = 48,
@@ -106,11 +106,11 @@ def reshape_lightning(
         [eie-sevir](https://github.com/MIT-AI-Accelerator/eie-sevir/blob/master/sevir/generator.py#L386)
 
     >>> import numpy as np
-    >>> import sevir.core.h5
+    >>> import sevirs.core.h5
     >>> a = np.random.rand(3, 5)
-    >>> sevir.core.h5.reshape_lightning(a, patch_size=256).shape
+    >>> sevir.core.h5.interp_lightning(a, patch_size=256).shape
     (256, 256, 49)
-    >>> sevir.core.h5.reshape_lightning(a, patch_size=256, t_slice=slice(0,1)).shape
+    >>> sevir.core.h5.interp_lightning(a, patch_size=256, t_slice=slice(0,1)).shape
     (256, 256, 1)
     """
     shape = nx, ny, _ = (patch_size, patch_size, len(t_frame) if t_slice.stop is None else 1)
@@ -147,25 +147,25 @@ class FileReader(h5py.File):
     """subclass of h5py.File that provides a few convenience methods for SEVIR files and __reduce__ to allow
     for pickling which is required for multiprocessing."""
 
-    __slots__ = ("image_type",)
+    __slots__ = ("img_type",)
     if TYPE_CHECKING:
-        image_type: ImageType
+        img_type: ImageType
 
-    def __init__(self, filename: str, image_type: ImageType) -> None:
-        self.image_type = image_type
+    def __init__(self, filename: str, img_type: ImageName) -> None:
         super().__init__(filename, mode="r")
+        self.img_type = ImageType(img_type)
 
     def __getitem__(self, __id: bytes | str, /) -> h5py.Dataset:
-        img_t = self.image_type
+        img_t = self.img_type
 
         return cast(h5py.Dataset, super().__getitem__(__id if img_t == LGHT else img_t))
 
-    def select(self, id_: str, fidx: int) -> Array[Nd[N, N, N], np.int16]:
-        ds = self[id_]
-        return reshape_lightning(ds[...]) if self.image_type == LGHT else ds[fidx, ...]
+    def select(self, img_id: str, fidx: int) -> Array[Nd[N, N, N], np.int16]:
+        ds = self[img_id]
+        return interp_lightning(ds[...]) if self.img_type == LGHT else ds[fidx, ...]
 
     @property
-    def event_ids(self) -> Array[Nd[N], np.bytes_]:
+    def img_ids(self) -> Array[Nd[N], np.bytes_]:
         return super().__getitem__(ID)[...]  # type: ignore[unused-ignore]
 
 
@@ -189,6 +189,7 @@ class Store(Mapping[str | bytes, list[Array[Nd[N, N, N], np.int16]]], AbstractCa
         catalog: Catalog | pl.DataFrame | pd.DataFrame,
         normalization: dict[ImageType, tuple[int, int]] | None = None,
     ) -> None:
+        super().__init__()
         if isinstance(catalog, (pl.DataFrame, pd.DataFrame)):
             catalog = Catalog(catalog)
 
@@ -219,7 +220,7 @@ class Store(Mapping[str | bytes, list[Array[Nd[N, N, N], np.int16]]], AbstractCa
         cls,
         data: str = DEFAULT_PATH_TO_SEVIR,
         *,
-        img_types: tuple[ImageType, ...] | None = None,
+        img_types: ImageSequence | None = None,
         catalog: str | None = DEFAULT_CATALOG,
         data_dir: str | None = DEFAULT_DATA,
     ) -> Store:
@@ -231,7 +232,7 @@ class Store(Mapping[str | bytes, list[Array[Nd[N, N, N], np.int16]]], AbstractCa
         return self.catalog.data
 
     @property
-    def types(self) -> tuple[ImageType, ...]:
+    def types(self) -> ImageTypes:
         return self.catalog.types
 
     def close(self) -> None:
@@ -244,10 +245,9 @@ class Store(Mapping[str | bytes, list[Array[Nd[N, N, N], np.int16]]], AbstractCa
         return len(self._files) == 0
 
     # =================================================================================================================
-    def pick(self, img_type: ImageType, img_id: str, file_ref: int, file_idx: int) -> Array[Nd[N, N, N], np.int16]:
+    def pick(self, img_id: str, file_ref: int, file_idx: int) -> Array[Nd[N, N, N], np.int16]:
         arr = self._files[file_ref].select(img_id, file_idx)
-        if self.normalization is not None:
-            arr = self.normalize(arr, *self.normalization[img_type])
+
         return arr
 
     # - Methods
@@ -283,24 +283,12 @@ class Store(Mapping[str | bytes, list[Array[Nd[N, N, N], np.int16]]], AbstractCa
     def __iter__(self) -> Iterator[bytes]:
         return iter(set(self.catalog.id))
 
-    def iter_arrays(
-        self, img_id: str | bytes, *, img_types: Collection[ImageType] | None = None
-    ) -> Iterator[Array[Nd[N, N, N], np.int16]]:
-        if isinstance(img_id, bytes):
-            img_id = img_id.decode("utf-8")
-        yield from (
-            self.pick(img_t, img_id, fref, fidx)
-            for img_t, fref, fidx in self.iter_indices(img_id, img_types=img_types)
-        )
-
-    def iter_files(self) -> Iterator[tuple[str, ImageType]]:
+    def iter_files(self) -> Iterator[tuple[str, ImageName]]:
         columns = pl.col(FILE_NAME), pl.col(IMG_TYPE)
         df = self.data.select(columns)
         yield from df.unique(subset=FILE_NAME).iter_rows()  # type: ignore[misc]
 
-    def iter_indices(
-        self, id_: str, *, img_types: Collection[ImageType] | None = None
-    ) -> Iterator[tuple[ImageType, int, int]]:
+    def iter_indices(self, id_: str, *, img_types: Collection[ImageName] | None = None) -> Iterator[tuple[int, int]]:
         """returns an iterator of (file_ref, file_index) tuples for the given id and image types"""
         img_types = img_types or self.types
         columns = pl.col(IMG_TYPE), pl.col(FILE_REF), pl.col(FILE_INDEX)
@@ -308,8 +296,16 @@ class Store(Mapping[str | bytes, list[Array[Nd[N, N, N], np.int16]]], AbstractCa
         return (
             df.filter((self.catalog.id == id_) & (self.img_type.is_in(img_types)))
             .sort(pl.col(IMG_TYPE).map_dict({t: i for i, t in enumerate(img_types)}), descending=False)
+            .drop(IMG_TYPE)
             .iter_rows()  # type: ignore[return-value]
         )
+
+    def iter_arrays(
+        self, img_id: str | bytes, *, img_types: Collection[ImageName] | None = None
+    ) -> Iterator[Array[Nd[N, N, N], np.int16]]:
+        if isinstance(img_id, bytes):
+            img_id = img_id.decode("utf-8")
+        yield from (self.pick(img_id, fref, fidx) for fref, fidx in self.iter_indices(img_id, img_types=img_types))
 
     def interp(
         self,
@@ -324,7 +320,6 @@ class Store(Mapping[str | bytes, list[Array[Nd[N, N, N], np.int16]]], AbstractCa
         return np.stack(arrays, axis=0)
 
     # =================================================================================================================
-
     def to_xarray(
         self,
         img_ids: str | list[str],
@@ -341,8 +336,6 @@ class Store(Mapping[str | bytes, list[Array[Nd[N, N, N], np.int16]]], AbstractCa
             )
             for id_ in img_ids
         }
-        #   bar.update(1)
-        # bar.close()
 
         coords = {
             "channel": (["c"], [str(t) for t in self.types]),

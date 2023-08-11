@@ -1,5 +1,5 @@
-from sevir.constants import FILE_INDEX, FILE_REF, ID, IMG_TYPE
-from sevir.core.h5 import Store
+from sevirs.constants import FILE_INDEX, FILE_REF, ID, IMG_TYPE
+from sevirs.core.h5 import Store
 
 
 def test_store(store: Store) -> None:

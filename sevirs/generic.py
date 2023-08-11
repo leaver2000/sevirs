@@ -308,6 +308,11 @@ class AbstractCatalog(abc.ABC):
     def data(self) -> pl.DataFrame:
         ...
 
+    # @property
+    # @abc.abstractmethod
+    # def types(self) -> ImageTypes:
+    #     ...
+
     @property
     def columns(self) -> list[str]:
         return self.data.columns

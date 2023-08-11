@@ -4,11 +4,11 @@
 # setup.cfg or other tool-specific files.
 # https://github.com/carlosperate/awesome-pyproject
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.0,<2.0", "setuptools"]
+build-backend = "maturin"
 
 [project]
-name = "sevir"
+name = "sevirs"
 version = "0.0.1"
 requires-python = ">=3.10"
 description = "Interface to SEVIR dataset"
@@ -68,6 +68,12 @@ all = [
     "jupyter-black",
 ]
 
+[tool.maturin] # https://www.maturin.rs/
+# "extension-module" tells pyo3 we want to build an extension module (skips linking against libpython.so)
+# features = ["pyo3/extension-module"]
+features = ["pyo3/extension-module"]
+module-name = "sevirs._lib"
+
 [tool.mypy]
 python_version = "3.10"
 platform = "linux"
@@ -75,24 +81,15 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 ignore_missing_imports = true
 enable_incomplete_feature = "TypeVarTuple,Unpack"
-exclude = ["docs/", "src/sevir/models/*"]
-
-[tool.setuptools]
-include-package-data = true
-
-[tool.setuptools.packages.find]
-where = ["src/"]
-
-[tool.setuptools.package-data]
-sevir = ["py.typed", "config.json"]
+exclude = ["docs/", "sevirs/models/*"]
 
 [tool.pytest]
 testpaths = ["tests/"]
 
 [tool.coverage.run]
 branch = true
-omit = ["src/sevir/_typing.py"]
-source = ["src/"]
+omit = ["sevirs/_typing.py"]
+source = ["sevirs/"]
 
 [tool.coverage.report]
 ignore_errors = false
