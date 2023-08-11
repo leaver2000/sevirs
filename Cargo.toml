@@ -1,9 +1,8 @@
 [package]
 name = "sevirs"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 
-# "cdylib" is necessary to produce a shared library for Python to import from.
 [lib]
 name = "_lib"
 crate-type = ["cdylib"]

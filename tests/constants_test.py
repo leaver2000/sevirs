@@ -1,6 +1,6 @@
 import pytest
 
-from src.sevir.constants import IR_069, IR_107, LGHT, VIL, VIS, ImageType
+from sevirs.constants import IR_069, IR_107, LGHT, VIL, VIS, ImageType
 
 
 @pytest.mark.parametrize(
@@ -14,4 +14,4 @@ from src.sevir.constants import IR_069, IR_107, LGHT, VIL, VIS, ImageType
     ],
 )
 def test_image_type(img_type: ImageType, name: str) -> None:
-    assert name == img_type == ImageType(name) == ImageType(img_type.name)
+    assert name == img_type == ImageType(name) == ImageType(img_type.name)  # type: ignore

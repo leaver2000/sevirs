@@ -120,10 +120,6 @@ class SequentialGenerator(IterableDataset[ValueT], AbstractContextManager, Gener
 
 # =====================================================================================================================
 class FeatureGenerator(SequentialGenerator[str, TensorPair]):
-    if TYPE_CHECKING:
-        x: Final[Store]  # type: ignore[misc]
-        y: Final[Store]  # type: ignore[misc]
-
     def __init__(
         self,
         data: CatalogData = DEFAULT_PATH_TO_SEVIR,
@@ -151,7 +147,8 @@ class FeatureGenerator(SequentialGenerator[str, TensorPair]):
         indices = x.id.unique(maintain_order=maintain_order)
 
         super().__init__(indices, img_types, patch_size)
-        self.x, self.y = x, y
+        self.x: Final[Store] = x
+        self.y: Final[Store] = y
 
     # =================================================================================================================
     # - abstract method interface
@@ -187,7 +184,7 @@ class TimeSeriesGenerator(SequentialGenerator[tuple[str, int], TensorPair]):
         catalog: str | None = DEFAULT_CATALOG,
         data_dir: str | None = DEFAULT_DATA,
         patch_size: PatchSize = DEFAULT_PATCH_SIZE,
-        n_time: int = DEFAULT_N_FRAMES,
+        n_frames: int = DEFAULT_N_FRAMES,
         n_inputs: int = 5,
         n_targets: int = 5,
         maintain_order: bool = False,
@@ -201,13 +198,13 @@ class TimeSeriesGenerator(SequentialGenerator[tuple[str, int], TensorPair]):
         # - indices
         indices: itertools.product[tuple[str, int]] = itertools.product(
             store.id.unique(maintain_order=maintain_order),
-            (i for i in range(0, n_time, n_inputs) if i + n_inputs + n_targets <= n_time),
+            (i for i in range(0, n_frames, n_inputs) if i + n_inputs + n_targets <= n_frames),
         )
         super().__init__(indices, img_types, patch_size)
         self.store = store
 
         # time slice parameters
-        self.n_time = n_time
+        self.n_frames = n_frames
         self.n_inputs = n_inputs
         self.n_targets = n_targets
 

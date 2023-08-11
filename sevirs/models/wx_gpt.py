@@ -321,7 +321,7 @@ class GPT(nn.Module):
         # only dropout can be overridden see more notes below
         assert all(k == "dropout" for k in override_args)
         try:
-            from transformers import GPT2LMHeadModel  # type:ignore
+            from transformers import GPT2LMHeadModel
         except ImportError:
             raise ImportError("transformers must be installed to load pretrained weights")
 

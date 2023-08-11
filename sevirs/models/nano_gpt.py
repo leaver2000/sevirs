@@ -1,3 +1,4 @@
+# pyright: reportGeneralTypeIssues=false
 """
 Adapted from https://github.com/karpathy/nanoGPT/blob/master/model.py
 only type annotations wer added

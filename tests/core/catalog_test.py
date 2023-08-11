@@ -1,7 +1,7 @@
 import pytest
 
-from sevir.constants import IR_069, IR_107, VIS, ImageType
-from sevir.core.catalog import Catalog
+from sevirs.constants import IR_069, IR_107, VIS, ImageType
+from sevirs.core.catalog import Catalog
 
 
 @pytest.mark.parametrize(
