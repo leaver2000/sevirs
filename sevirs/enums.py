@@ -40,31 +40,29 @@ EnumT = TypeVar("EnumT", bound=PlotEnumProtocol)
 
 
 class BaseEnumType(_EnumMeta):
-    def sequential(cls: type[EnumT], __iterable: Iterable[Any] | None = None) -> tuple[EnumT, ...]:
+    def sequential(self, __iterable: Iterable[Any] | None = None) -> tuple[EnumT, ...]:
         if not __iterable:
-            return tuple(iter(cls))  # type: ignore
-        if isinstance(__iterable, tuple) and all(isinstance(x, cls) for x in __iterable):
+            return tuple(iter(self))
+        if isinstance(__iterable, tuple) and all(
+            isinstance(x, self) for x in __iterable
+        ):
             return __iterable
 
-        return tuple(cls.__call__(x) for x in __iterable)
+        return tuple(self.__call__(x) for x in __iterable)
 
 
 class PlotEnumType(BaseEnumType):
-    def gcf(cls) -> Figure:
-        return plt.gcf() if plt.fignum_exists(1) else cls.figure()
+    def gcf(self) -> Figure:
+        return plt.gcf() if plt.fignum_exists(1) else self.figure()
 
-    def figure(cls, figsize=(15, 5)) -> Figure:
+    def figure(self, figsize=(15, 5)) -> Figure:
         return plt.figure(figsize=figsize)
 
-    def zipplots(cls: type[EnumT], nrows: int = 1, *args: EnumT | str) -> zip[tuple[EnumT, Axes]]:
-        if not args:
-            ncols = len(cls)
-        else:
-            ncols = len(args)
+    def zipplots(self, nrows: int = 1, *args: EnumT | str) -> zip[tuple[EnumT, Axes]]:
+        ncols = len(self) if not args else len(args)
+        members = self.sequential(args)
 
-        members = cls.sequential(args)
-
-        fig = cls.gcf()
+        fig = self.gcf()
         axes = cast(np.ndarray, fig.subplots(nrows, ncols)).flatten()
         return zip((members * nrows), axes)
 
@@ -134,8 +132,7 @@ class ImageEnumType(str, Enum, metaclass=PlotEnumType):
     def imconfig(
         self, *, encoded: bool = True, **kwargs: str | float | Sequence[float] | np.ndarray | None
     ) -> ImageConfig:
-        config: ImageConfig = {}
-        config["cmap"] = self.get_cmap()
+        config: ImageConfig = {"cmap": self.get_cmap()}
         config["norm"] = self.get_norm(encoded=encoded, ncolors=config["cmap"].N)
         config |= {key: value for key, value in kwargs.items() if value is not None}  # type: ignore
         return config
