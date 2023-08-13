@@ -1,42 +1,25 @@
 from __future__ import annotations
 
-import enum
 import itertools
 import json
-import logging
 import os
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    ClassVar,
-    Final,
-    Iterator,
-    Literal,
-    Mapping,
-    Sequence,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, Final, Iterator, Literal, Mapping
 
-import matplotlib
 import numpy as np
 import polars as pl
-from matplotlib.colors import BoundaryNorm, Colormap, ListedColormap, Normalize
-from numpy.typing import NDArray
+from matplotlib.colors import Colormap, ListedColormap
 from polars.type_aliases import SchemaDict
-from typing_extensions import Self, Unpack
 
-# the matplotlib stub files jacked up it appears to be a vscode type-shed issue
-_mpl_colormaps: Mapping[str, Colormap]
-from matplotlib import colormaps as _mpl_colormaps  # type: ignore
+from ._typing import Array, N, Nd, cast_literal_list
+from .enums import ImageEnumType
 
 if TYPE_CHECKING:
-    import matplotlib.pyplot as plt
-    from matplotlib.image import AxesImage
+    _mpl_colormaps: Mapping[str, Colormap]
+from matplotlib import colormaps as _mpl_colormaps  # type: ignore
 
+with open(os.path.join(os.path.dirname(__file__), "config.json"), "r") as f:
+    METADATA: Final[Mapping[str, Mapping[str, Mapping[str, Any]]]] = json.load(f)
 
-from ._typing import Array, DictStrAny, ImageShowConfig, N, Nd, cast_literal_list
-
-logging.getLogger().setLevel(logging.INFO)
 DEFAULT_PATH_TO_SEVIR = os.getenv("PATH_TO_SEVIR", None) or os.path.abspath(os.path.dirname(os.path.abspath(__file__)))
 """>>> os.environ['PATH_TO_SEVIR']"""
 DEFAULT_CATALOG = "CATALOG.csv"
@@ -53,156 +36,13 @@ the frame's time EXCEPT for the first frame, which will use the same flashes as 
 DEFAULT_PATCH_SIZE = int(os.getenv("PATCH_SIZE", 256))
 
 
-with open(os.path.join(os.path.dirname(__file__), "config.json"), "r") as f:
-    METADATA: Final[Mapping[str, Mapping[str, Mapping[str, Any]]]] = json.load(f)
+class ColormapRegistry(Mapping[str, Colormap]):
+    __slots__ = ("_data",)
 
-
-class _ImageTypeEnum(str, enum.Enum):
-    if TYPE_CHECKING:
-        value: str
-        _member_map_: ClassVar[dict[str, Self]]
-
-    def __str__(self) -> str:
-        return str(self._value_)
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}.{self.name}"
-
-    # - classmethods
-    @classmethod
-    def _missing_(cls, value: Any) -> Self:
-        if result := cls._member_map_.get(value, None):  # type: ignore
-            return result
-        raise ValueError(f"{value} is not a valid {cls.__name__}")
-
-    @classmethod
-    def sequence(cls, sequence: Sequence[Self | str] | None = None, /) -> tuple[Self, ...]:
-        if sequence is None:
-            return tuple(cls)
-        elif len(sequence) != len(set(sequence)):
-            raise ValueError("Duplicate image types in img_types")
-        elif isinstance(sequence, tuple) and not all(x is str for x in sequence):
-            return cast(tuple[Self, ...], sequence)
-        return tuple(cls(t) for t in sequence)
-
-    # - metadata interface
-    @property
-    def description(self) -> str:
-        return METADATA["imageType"][self.value]["description"]
-
-    @property
-    def sensor(self) -> str:
-        return METADATA["imageType"][self.value]["sensor"]
-
-    @property
-    def patch_size(self) -> int:
-        return METADATA["imageType"][self.value]["patchSize"]
-
-    @property
-    def time_steps(self) -> int:
-        return METADATA["imageType"][self.value]["timeStep"]
-
-    @property
-    def color_map(self) -> NDArray[np.float_] | str:
-        values = METADATA["imageType"][self.value]["colorMap"]
-        if isinstance(values, str):
-            return values
-        return np.array(values)
-
-    @property
-    def boundaries(self) -> NDArray[np.float_] | dict[str, float]:
-        values = METADATA["imageType"][self.value]["boundaries"]
-        return np.array(values, dtype=np.float_) if isinstance(values, list) else values
-
-    @property
-    def encoding(self) -> float:
-        return METADATA["imageType"][self.value]["encoding"]
-
-    # - display interface
-    def get_norm(self, *, encoded=True, ncolors: int = 0) -> DictStrAny:
-        bounds = self.boundaries
-        if isinstance(bounds, dict):
-            return {k: v * self.encoding for k, v in bounds.items()} if encoded else bounds
-        if encoded:
-            bounds *= self.encoding
-        return {"norm": BoundaryNorm(bounds, ncolors)}
-
-    def imconfig(self, *, encoded: bool = True, **kwargs: Unpack[ImageShowConfig]) -> DictStrAny:
-        config = {"cmap": colormaps[self]}
-        config |= self.get_norm(encoded=encoded, ncolors=config["cmap"].N)
-        config |= {k: v for k, v in kwargs.items() if v is not None}
-        return config
-
-    def imshow(
-        self,
-        axes: plt.Axes,
-        data: np.ndarray,
-        *,
-        encoded: bool = True,
-        title: str | None = None,
-        # - ImageShowConfig
-        cmap: str | Colormap | None = None,
-        norm: Normalize | None = None,
-        aspect: float | Literal["equal", "auto"] | None = None,
-        interpolation: str | None = None,
-        alpha: float | np.ndarray | None = None,
-        vmin: float | None = None,
-        vmax: float | None = None,
-        origin: Literal["upper", "lower"] | None = None,
-        extent: Sequence[float] | None = None,
-        interpolation_stage: Literal["data", "rgba"] | None = None,
-        filternorm: bool = True,
-        filterrad: float = 4.0,
-        resample: bool | None = None,
-        url: str | None = None,
-    ) -> AxesImage:
-        config = self.imconfig(
-            encoded=encoded,
-            cmap=cmap,
-            norm=norm,
-            aspect=aspect,
-            interpolation=interpolation,
-            alpha=alpha,
-            vmin=vmin,
-            vmax=vmax,
-            origin=origin,
-            extent=extent,
-            interpolation_stage=interpolation_stage,
-            filternorm=filternorm,
-            filterrad=filterrad,
-            resample=resample,
-            url=url,
-        )
-        img = axes.imshow(data, **config)
-        if title is not None:
-            axes.set_title(title)
-        return img
-
-    def animate(self):
-        raise NotImplementedError
-
-
-class ImageType(_ImageTypeEnum):
-    r"""| Sensor | Data key | Description | Spatial Resolution |  Patch Size |  Time step |
-    |:--------:|:------:|:-------------:|:--------------------:|:---------:|:-----------:|
-    |  GOES-16 C02 0.64 $\mu m$  |`vis`| Visible satellite imagery |  0.5 km | 768x768 | 5 minute   |
-    |  GOES-16 C09 6.9 $\mu m$  |`ir069`| Infrared Satellite imagery (Water Vapor) | 2 km | 192 x 192  | 5 minutes|
-    |  GOES-16 C13 10.7 $\mu m$  |`ir107`| Infrared Satellite imagery (Window) | 2 km | 192 x 192  | 5 minutes |
-    |  Vertically Integrated Liquid (VIL) |`vil`|  NEXRAD radar mosaic of VIL | 1 km | 384 x 384  |5 minutes |
-    |  GOES-16 GLM flashes |`lght`| Inter cloud and cloud to ground lightning events | 8 km | N/A | Continuous |
-    """
-    VIS = "vis"
-    IR_069 = "ir069"
-    IR_107 = "ir107"
-    VIL = "vil"
-    LGHT = "lght"
-
-
-class ColormapRegistry(Mapping[str, matplotlib.colors.Colormap]):
-    def __init__(self, data: Mapping[str, matplotlib.colors.Colormap]) -> None:
+    def __init__(self, data: Mapping[str, Colormap]) -> None:
         self._data = data
 
-    def __getitem__(self, item: str) -> matplotlib.colors.Colormap:
+    def __getitem__(self, item: str) -> Colormap:
         return self._data.get(item, None) or _mpl_colormaps[item]
 
     def __iter__(self) -> Iterator[str]:
@@ -211,37 +51,59 @@ class ColormapRegistry(Mapping[str, matplotlib.colors.Colormap]):
     def __len__(self) -> int:
         return len(self._data) + len(_mpl_colormaps)
 
+    @classmethod
+    def create(cls, *args: tuple[ImageEnumType, slice | None]) -> ColormapRegistry:
+        return ColormapRegistry(
+            {key.value: cls.create_cmap(key, slice_) for key, slice_ in args},
+        )
 
-def _create_cmap(
-    colors: np.ndarray | str,
-    bad: int | None = None,
-    under: int | None = None,
-    over: int | None = None,
-    good: slice | None = None,
-) -> Colormap:
-    if isinstance(colors, str):
-        return _mpl_colormaps[colors]
+    @staticmethod
+    def create_cmap(img_type: ImageEnumType, slice_: slice | None = None, /, bad=0) -> Colormap:
+        colors = img_type.colors
+        if isinstance(colors, str):
+            return _mpl_colormaps[colors]
+        if slice_ is None:
+            return ListedColormap(colors, name=img_type.value)
+        cmap = ListedColormap(colors[slice_], name=img_type.value)
+        cmap.set_extremes(bad=colors[bad], under=colors[slice_.start], over=colors[slice_.stop])
+        return cmap
 
-    cmap = ListedColormap(colors if good is None else colors[good])  # type: ignore[unused-ignore]
-    if bad is not None:
-        cmap.set_bad(colors[bad])
-    if under is not None:
-        cmap.set_under(colors[under])
-    if over is not None:
-        cmap.set_over(colors[over])
-    return cmap
+
+class ImageType(ImageEnumType):
+    r"""| Sensor | Data key | Description | Spatial Resolution |  Patch Size |  Time step |
+    |:--------:|:------:|:-------------:|:--------------------:|:---------:|:-----------:|
+    |  GOES-16 C02 0.64 $\mu m$  |`vis`| Visible satellite imagery |  0.5 km | 768x768 | 5 minute   |
+    |  GOES-16 C09 6.9 $\mu m$  |`ir069`| Infrared Satellite imagery (Water Vapor) | 2 km | 192 x 192  | 5 minutes|
+    |  GOES-16 C13 10.7 $\mu m$  |`ir107`| Infrared Satellite imagery (Window) | 2 km | 192 x 192  | 5 minutes |
+    |  Vertically Integrated Liquid (VIL) |`vil`|  NEXRAD radar mosaic of VIL | 1 km | 384 x 384  |5 minutes |
+    |  GOES-16 GLM flashes |`lght`| Inter cloud and cloud to ground lightning events | 8 km | N/A | Continuous |
+    """
+    # =================================================================================================================
+    VIS = "vis"
+    IR_069 = "ir069"
+    IR_107 = "ir107"
+    VIL = "vil"
+    LGHT = "lght"
+
+    # =================================================================================================================
+    # - abc interface
+    def get_cmap(self) -> Colormap:
+        return colormaps[self.value]
+
+    @property
+    def metadata(self) -> Mapping[str, Mapping[str, Any]]:
+        return METADATA["imageType"]
 
 
 IMAGE_TYPES = VIS, IR_069, IR_107, VIL, LGHT = tuple(ImageType)
 
-colormaps: Final = ColormapRegistry(
-    {
-        VIL: _create_cmap(VIL.color_map, 0, 1, -1, slice(1, -1)),
-        VIS: _create_cmap(VIS.color_map, 0, 0, -1, slice(0, -1)),
-        IR_069: _create_cmap(IR_069.color_map),
-        IR_107: _create_cmap(IR_107.color_map),
-        LGHT: _create_cmap(LGHT.color_map),
-    },
+
+colormaps: Final = ColormapRegistry.create(
+    (VIL, slice(1, -1)),
+    (VIS, slice(0, -1)),
+    (IR_069, None),
+    (IR_107, None),
+    (LGHT, None),
 )
 
 # =====================================================================================================================

@@ -118,8 +118,10 @@ class Catalog(PolarsAdapter, AbstractCatalog):
         # - fast path
         if isinstance(src, Catalog):
             return src.data, src.types
-
-        img_types = ImageType.sequence(img_types)
+        if img_types is not None and len(img_types) != len(set(img_types)):
+            raise ValueError("Duplicate image types are not allowed.")
+        else:
+            img_types = ImageType.sequential(img_types)  # type: ignore[misc]
 
         # - construction
         if isinstance(src, str):
