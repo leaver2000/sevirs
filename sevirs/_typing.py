@@ -20,11 +20,16 @@ import sys
 from typing import (
     TYPE_CHECKING,
     Any,
+    Callable,
     Generic,
     Hashable,
+    Iterable,
     Literal,
+    Protocol,
     Sequence,
+    Sized,
     TypeAlias,
+    TypedDict,
     TypeVar,
     get_args,
 )
@@ -32,12 +37,13 @@ from typing import (
 import numpy as np
 import pandas as pd
 import polars as pl
+from matplotlib.colors import Colormap, Normalize
 from pandas._typing import Scalar
 
 if sys.version_info < (3, 11):
-    from typing_extensions import TypeVarTuple, Unpack
+    from typing_extensions import Self, TypeVarTuple, Unpack
 else:
-    from typing import TypeVarTuple, Unpack
+    from typing import Self, TypeVarTuple, Unpack
 if TYPE_CHECKING:  # avoid circular imports
     from .constants import ImageType as _ImageType
     from .core.catalog import Catalog as _Catalog
@@ -47,6 +53,10 @@ else:
 
 
 # =====================================================================================================================
+_T1_co = TypeVar("_T1_co", covariant=True)
+_T2_co = TypeVar("_T2_co", covariant=True)
+
+
 Ts = TypeVarTuple("Ts")
 AnyT = TypeVar("AnyT", bound=Any)
 KeyT = TypeVar("KeyT", bound=Hashable)
@@ -101,27 +111,69 @@ Array: TypeAlias = np.ndarray[_NdT, np.dtype[AnyT]]
 >>> reveal_type(a)
 Runtime type is 'ndarray'
 """
+
+
 # =====================================================================================================================
-from typing import TypedDict
-
-from matplotlib.colors import Colormap, Normalize
 
 
-class ImageShowConfig(TypedDict, total=False):
-    # X: Unknown,
-    cmap: str | Colormap | None
-    norm: Normalize | None
-    aspect: float | Literal["equal", "auto"] | None
-    interpolation: str | None
-    alpha: float | np.ndarray | None
-    vmin: float | None
-    vmax: float | None
-    origin: Literal["upper", "lower"] | None
-    extent: Sequence[float] | None
+class ImageKwargs(TypedDict, total=False):
+    """partial config passed to `matplotlib.pyplot.imshow`"""
 
-    interpolation_stage: Literal["data", "rgba"] | None
-    filternorm: bool
-    filterrad: float
-    resample: bool | None
-    url: str | None
-    # **kwargs: Unknown
+    aspect: float | Literal["equal", "auto"]
+    interpolation: str
+    alpha: float | np.ndarray
+    origin: Literal["upper", "lower"]
+    extent: Sequence[float]
+    interpolation_stage: Literal["data", "rgba"]
+
+
+class ImageConfig(ImageKwargs, total=False):
+    """partial config passed to `matplotlib.pyplot.imshow`"""
+
+    cmap: Colormap
+    norm: Normalize
+
+
+# =====================================================================================================================
+# - Protocols
+# =====================================================================================================================
+class Shaped(Sized, Protocol):
+    @property
+    def shape(self) -> tuple[int, ...]:
+        ...
+
+
+class Closeable(Protocol):
+    def close(self) -> None:
+        ...
+
+
+class FrameProtocol(Shaped, Generic[_T1_co, _T2_co], Protocol):
+    @property
+    def columns(self) -> _T1_co:
+        ...
+
+    @property
+    def dtypes(self) -> _T2_co:
+        ...
+
+
+class EnumProtocol(Protocol[AnyT]):
+    value: AnyT
+    __iter__: Callable[..., Iterable[Self]]
+
+    @classmethod
+    def __len__(cls) -> int:
+        ...
+
+    @classmethod
+    def __next__(cls) -> Self:
+        ...
+
+    @classmethod
+    def __getitem__(cls, name: str) -> Self:
+        ...
+
+    @classmethod
+    def __call__(cls, value: Any) -> Self:
+        ...
