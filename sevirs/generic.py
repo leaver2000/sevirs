@@ -12,8 +12,10 @@ from typing import (
     Generic,
     Iterable,
     ParamSpec,
+    Sequence,
     TypeAlias,
     TypeVar,
+    Union,
     overload,
 )
 
@@ -22,7 +24,7 @@ import pandas as pd
 import polars as pl
 import pyarrow as pa
 from polars.type_aliases import IntoExpr
-from typing_extensions import Self
+from typing_extensions import Self, TypeVarTuple, Unpack
 
 from ._typing import FrameProtocol, Shaped
 from .constants import (
@@ -47,6 +49,7 @@ _T1_co = TypeVar("_T1_co", covariant=True)
 _T2_co = TypeVar("_T2_co", covariant=True)
 _ShapeProto_T = TypeVar("_ShapeProto_T", bound="Shaped")
 _FrameProto_T = TypeVar("_FrameProto_T", bound="FrameProtocol[Any, Any]")
+_Ts = TypeVarTuple("_Ts")
 
 
 # =====================================================================================================================
@@ -65,36 +68,37 @@ class BaseConfig:
         return dataclasses.asdict(self)
 
 
-# class Sequential(Sequence[tuple[Unpack[_Ts]]]):
-#     __slots__ = ("data",)
+class Sequential(Sequence[Unpack[_Ts]]):
+    __slots__ = ("data",)
 
-#     @overload
-#     def __init__(self, __iterable: Iterable[Union[Unpack[_Ts]]]) -> None:
-#         ...
+    @overload
+    def __init__(self, __iterable: Iterable[Union[Unpack[_Ts]]]) -> None:
+        ...
 
-#     @overload
-#     def __init__(self, *args: Unpack[_Ts]):
-#         ...
+    @overload
+    def __init__(self, *args: Unpack[_Ts]):
+        ...
 
-#     def __init__(self, __iterable, *args):
-#         if args == _EMPTY_TUPLE:
-#             data = (__iterable,) if isinstance(__iterable, str) or not isinstance(__iterable, Iterable) else __iterable
-#         else:
-#             data = (__iterable, *args)
+    def __init__(self, __iterable, *args):
+        if args == _EMPTY_TUPLE:
+            data = (__iterable,) if isinstance(__iterable, str) or not isinstance(__iterable, Iterable) else __iterable
+        else:
+            data = (__iterable, *args)
 
-#         self.data: Final[tuple[Any]] = tuple(data)  # type: ignore
+        self.data: Final[tuple[Any]] = tuple(data)  # type: ignore
 
-#     def __getitem__(self, index: Any) -> Any:
-#         return self.data[index]
+    def __getitem__(self, index: Any) -> Any:
+        return self.data[index]
 
-#     def __len__(self) -> int:
-#         return len(self.data)
+    def __len__(self) -> int:
+        return len(self.data)
 
-#     def __repr__(self):
-#         return f"{self.__class__.__name__}{repr(self.data)}"
+    def __repr__(self):
+        return f"{self.__class__.__name__}{repr(self.data)}"
 
-#     def map(self, func: Callable[[Union[Unpack[_Ts]]], _T1]) -> Sequential[_T1]:
-#         return Sequential(func(v) for v in self.data)
+    # # type: ignore
+    # def map(self, func: Callable[[Unpack[_Ts]], Unpack[_Ts]]) -> Sequential[Unpack[_Ts]]:  # type: ignore
+    #     return Sequential(func(v) for v in self.data)  # type: ignore
 
 
 class DataManager(Generic[_T1]):

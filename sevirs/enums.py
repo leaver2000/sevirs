@@ -3,16 +3,7 @@ from __future__ import annotations
 import abc
 from enum import Enum
 from enum import EnumMeta as _EnumMeta
-from typing import (
-    Any,
-    Iterable,
-    Literal,
-    Mapping,
-    Protocol,
-    Sequence,
-    TypeVar,
-    cast,
-)
+from typing import Any, Iterable, Literal, Mapping, Protocol, Sequence, TypeVar, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
