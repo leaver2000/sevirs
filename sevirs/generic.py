@@ -38,7 +38,6 @@ from .constants import (
     ImageType,
 )
 
-_EMPTY_TUPLE: tuple[()] = ()
 # =====================================================================================================================
 # - Type Variables
 # =====================================================================================================================
@@ -68,7 +67,7 @@ class BaseConfig:
         return dataclasses.asdict(self)
 
 
-class Sequential(Sequence[Unpack[_Ts]]):
+class Sequential(Sequence[Union[Unpack[_Ts]]]):
     __slots__ = ("data",)
 
     @overload
@@ -80,12 +79,16 @@ class Sequential(Sequence[Unpack[_Ts]]):
         ...
 
     def __init__(self, __iterable, *args):
-        if args == _EMPTY_TUPLE:
-            data = (__iterable,) if isinstance(__iterable, str) or not isinstance(__iterable, Iterable) else __iterable
-        else:
+        if args:
             data = (__iterable, *args)
+        else:
+            data = (
+                (__iterable,)
+                if isinstance(__iterable, str) or not isinstance(__iterable, Iterable)
+                else tuple(__iterable)
+            )
 
-        self.data: Final[tuple[Any]] = tuple(data)  # type: ignore
+        self.data: Final[tuple[Any, ...]] = tuple(data)
 
     def __getitem__(self, index: Any) -> Any:
         return self.data[index]
