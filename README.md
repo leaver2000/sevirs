@@ -2,12 +2,12 @@
 
 This is a research product that builds on top of alot of already existing work.
 
-[sevir_challenges](https://github.com/MIT-AI-Accelerator/sevir_challenges)
-[eie-sevir](https://github.com/MIT-AI-Accelerator/eie-sevir)
-[neurips-2020-sevir](https://github.com/MIT-AI-Accelerator/neurips-2020-sevir)
-[WAF_ML_Tutorial_Part1](https://github.com/ai2es/WAF_ML_Tutorial_Part1)
-[WAF_ML_Tutorial_Part2](https://github.com/ai2es/WAF_ML_Tutorial_Part2)
-[multi earth challenge](https://github.com/MIT-AI-Accelerator/multiearth-challenge)
+- [sevir_challenges](https://github.com/MIT-AI-Accelerator/sevir_challenges)
+- [eie-sevir](https://github.com/MIT-AI-Accelerator/eie-sevir)
+- [neurips-2020-sevir](https://github.com/MIT-AI-Accelerator/neurips-2020-sevir)
+- [WAF_ML_Tutorial_Part1](https://github.com/ai2es/WAF_ML_Tutorial_Part1)
+- [WAF_ML_Tutorial_Part2](https://github.com/ai2es/WAF_ML_Tutorial_Part2)
+- [multi earth challenge](https://github.com/MIT-AI-Accelerator/multiearth-challenge)
 
 ## Getting Started
 
@@ -44,12 +44,19 @@ docker run -it -p 8888:8888 --gpus all \
 
 The .devcontainer directory contains the configuration files for the
 [Visual Studio Code Remote - Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
-extension. This allows the user to develop the project in a containerized
-environment. The .devcontainer directory also contains the [Dockerfile](#dockerfile) for the project.
+extension. This allows the user to develop inside a containerized environment.
+The .devcontainer directory also contains the [Dockerfile](#dockerfile) for the project.
 
 ### The Hard Way
 
 ```bash
 sudo apt-get install libgeos-dev proj-bin
 pip install cartopy
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y # install rust
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r .
+
 ```

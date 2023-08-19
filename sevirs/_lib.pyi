@@ -1,6 +1,7 @@
 # flake8: noqa
-from ._typing import Array, Nd, N
 import numpy as np
+
+from ._typing import Array, N, Nd
 
 class GridEncoder:
     def __init__(self, data: Array[Nd[N, N], np.int32], n: int) -> None: ...

@@ -41,8 +41,8 @@ from ..constants import (
     LGHT,
     ImageType,
 )
-from ..generic import AbstractCatalog, AbstractContextManager
-from .catalog import Catalog
+from ..data.generic import AbstractContextManager
+from .catalog import AbstractCatalog, Catalog
 
 
 # =====================================================================================================================
@@ -379,7 +379,7 @@ class Store(Mapping[str | bytes, list[Array[Nd[N, N, N], np.int16]]], AbstractCa
             ):
                 mode = "w" if not os.path.exists(dest) else "a"
 
-                ds.to_zarr(dest, mode=mode)  # type:ignore
+                ds.to_zarr(dest, mode=mode)
 
     @staticmethod
     def normalize(arr: np.ndarray, scale: int, offset: int) -> np.ndarray:

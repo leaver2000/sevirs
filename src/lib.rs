@@ -1,23 +1,30 @@
 #![allow(unused_imports)]
-use numpy::ndarray::{ArrayD, ArrayViewD, ArrayViewMutD, Dim};
-use numpy::{IntoPyArray, PyArray, PyArray3, PyArray4, PyArrayDyn, PyReadonlyArrayDyn};
-use pyo3::prelude::pyfunction;
+// use numpy::ndarray::Dim;
+use numpy::ndarray::*;
+use numpy::{IntoPyArray, PyArray, ToPyArray};
 use pyo3::prelude::*;
-use rand::Rng;
-use std::cmp::Ordering;
-use std::io;
-
-// fn to_numpy(&self) -> PyResult<Py<PyArray<i32, Dim<[usize; 3]>>>> {
-//     let gil = Python::acquire_gil();
-//     let py = gil.python();
-//     let arr = self.arr.clone().unwrap();
-//     let arr = PyArray::from_owned_array(py, arr);
-//     Ok(arr)
-// }
 
 type Matrix<T> = Vec<Vec<T>>;
+// struct ArrayInerface<T> {
+//     data: T,
+// }
+// impl ArrayInerface {
+//     fn new(data: Vec<T>) -> Self {
+//         Self { data }
+//     }
+//     fn to_numpy<'py>(&self, py: Python<'py>) -> PyResult<Py<PyArray<i32, IxDyn>>>> {
+//         Ok(self
+//             .values
+//             .clone()
+//             .into_pyarray(py)
+//             .reshape(self.shape)
+//             .unwrap()
+//             .to_owned())
+//     }
 
-fn flat_extend(data: &Matrix<i32>, n: usize) -> Vec<i32> {
+// }
+
+fn flat_decompose(data: &Matrix<i32>, n: usize) -> Vec<i32> {
     if data.len() != data[0].len() {
         panic!("data size is not equal to size");
     }
@@ -41,6 +48,36 @@ fn flat_extend(data: &Matrix<i32>, n: usize) -> Vec<i32> {
     result
 }
 
+pub fn decompose2d(data: Matrix<i32>, n: usize) -> Matrix<Matrix<i32>> {
+    let n_rows = data.len();
+    let n_columns = data[0].len();
+    let mut result: Matrix<Matrix<i32>> = vec![];
+
+    for i in 0..n_rows {
+        let mut row: Matrix<Vec<i32>> = vec![];
+        for j in 0..n_columns {
+            let mut column: Matrix<i32> = vec![];
+            for k in 0..n {
+                let mut vector: Vec<i32> = vec![];
+                let xi = i + k;
+                for l in 0..n {
+                    let yi = j + l;
+                    if xi >= n_rows || yi >= n_columns {
+                        vector.push(0);
+                        continue;
+                    }
+
+                    vector.push(data[xi][yi]);
+                }
+                column.push(vector);
+            }
+            row.push(column);
+        }
+        result.push(row);
+    }
+    result
+}
+
 #[pyclass]
 struct GridEncoder {
     // - properties
@@ -60,8 +97,7 @@ impl GridEncoder {
         }
         let size = data.len();
         let shape: (usize, usize, usize, usize) = (size, size, n, n);
-        let values: Vec<i32> = flat_extend(&data, n);
-
+        let values: Vec<i32> = flat_decompose(&data, n);
         Self { values, shape }
     }
 
@@ -75,39 +111,6 @@ impl GridEncoder {
             .to_owned())
     }
 }
-
-// #[pyfunction]
-// fn guess() {
-//     println!("Guess the number!");
-
-//     let secret_number = rand::thread_rng().gen_range(1..101);
-
-//     loop {
-//         println!("Please input your guess.");
-
-//         let mut guess = String::new();
-
-//         io::stdin()
-//             .read_line(&mut guess)
-//             .expect("Failed to read line");
-
-//         let guess: u32 = match guess.trim().parse() {
-//             Ok(num) => num,
-//             Err(_) => continue,
-//         };
-
-//         println!("You guessed: {}", guess);
-
-//         match guess.cmp(&secret_number) {
-//             Ordering::Less => println!("Too small!"),
-//             Ordering::Greater => println!("Too big!"),
-//             Ordering::Equal => {
-//                 println!("You win!");
-//                 break;
-//             }
-//         }
-//     }
-// }
 
 /// A Python module implemented in Rust. The name of this function must match
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to

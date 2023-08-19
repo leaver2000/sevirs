@@ -47,6 +47,7 @@ dev = [
     "ruff",
     "black",
     "isort",
+    "tensor-annotations",
     "mypy-extensions",
     "pyarrow-stubs",
 ]
@@ -60,6 +61,7 @@ all = [
     "isort",
     "types-tqdm",
     "mypy-extensions",
+    "tensor-annotations-tensorflow-stubs",
     "pyarrow-stubs",
     "pandas-stubs",
     # "jupyter"
@@ -81,7 +83,7 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 ignore_missing_imports = true
 enable_incomplete_feature = "TypeVarTuple,Unpack"
-exclude = ["docs/", "sevirs/models/*"]
+exclude = ["docs/"]
 
 [tool.pytest]
 testpaths = ["tests/"]

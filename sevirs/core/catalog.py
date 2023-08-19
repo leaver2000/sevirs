@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import abc
 import os
 from typing import Any, Collection, Final
 
@@ -16,17 +17,21 @@ from ..constants import (
     DEFAULT_DATA,
     DEFAULT_PATH_TO_SEVIR,
     EVENT_TYPE,
+    FILE_INDEX,
     FILE_NAME,
     FILE_REF,
     ID,
     IMG_TYPE,
     PROJ,
     PROJECTION_REGEX,
+    TIME_UTC,
     CatalogColumn,
     EventType,
     ImageType,
 )
-from ..generic import AbstractCatalog, PolarsAdapter
+from ..data.generic import PolarsAdapter
+
+# from ..models.generic import AbstractCatalog, PolarsAdapter
 
 
 # =====================================================================================================================
@@ -98,6 +103,53 @@ def subset(df: pl.DataFrame, img_types: ImageSequence) -> pl.DataFrame:
 
 
 # =====================================================================================================================
+
+
+class AbstractCatalog(abc.ABC):
+    data: pl.DataFrame
+    # @property
+    # @abc.abstractmethod
+    # def data(self) -> pl.DataFrame:
+    #     ...
+
+    @property
+    def columns(self) -> list[str]:
+        return self.data.columns
+
+    @property
+    def id(self) -> pl.Series:  # noqa: A003
+        return self.data[ID]
+
+    @property
+    def file_name(self) -> pl.Series:
+        return self.data[FILE_NAME]
+
+    @property
+    def file_index(self) -> pl.Series:
+        return self.data[FILE_INDEX]
+
+    @property
+    def file_ref(self) -> pl.Series:
+        return self.data[FILE_REF]
+
+    @property
+    def img_type(self) -> pl.Series:
+        return self.data[IMG_TYPE]
+
+    @property
+    def event_type(self) -> pl.Series:
+        return self.data[EVENT_TYPE]
+
+    @property
+    def time_utc(self) -> pl.Series:
+        return self.data[TIME_UTC]
+
+    def date_range(self, img_ids: Collection[str], periods: int = 49, freq: int = 5) -> pd.DatetimeIndex:
+        arr = self.time_utc.filter(self.id.is_in(img_ids)).to_numpy()
+        arr = np.c_[arr, arr + np.timedelta64(freq * periods, "m")]
+        return pd.DatetimeIndex(arr)
+
+
 class Catalog(PolarsAdapter, AbstractCatalog):
     __slots__ = ("types",)
 

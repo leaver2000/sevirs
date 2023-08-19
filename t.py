@@ -1,14 +1,23 @@
-import sevirs
-from sevirs._lib import GridEncoder
-import numpy as np
-from scipy.ndimage import shift
+import ast
+import sys
 
 
-def main():
-    a = np.random.randint(0, 255, (100, 100)).astype(np.int32)
-    e = GridEncoder(a, 5)
-    arr = e.to_numpy()
-    print(arr[0, 0], a[2, 2])
+def main() -> int:
+    with open("sevirs/mrms/constants.py", "r") as f:
+        x = ast.parse(f.read())
+    _all_ = []
+    for item in x.body:
+        if isinstance(item, (ast.ClassDef, ast.FunctionDef)) and not item.name.startswith("_"):
+            _all_.append(item.name)
+        elif isinstance(item, ast.Assign):
+            for target in item.targets:
+                if isinstance(target, ast.Name) and not target.id.startswith("_"):
+                    _all_.append(target.id)
+        else:
+            print(ast.dump(item))
+    print(_all_)
+    return 0
 
 
-main()
+if __name__ == "__main__":
+    sys.exit(main())

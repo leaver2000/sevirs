@@ -5,11 +5,15 @@ edition = "2021"
 
 [lib]
 name = "_lib"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-rand = "0.8.4"
 pyo3 = "0.19.0"
+numpy = "0.19"
+# rand = "0.8.4"
 # numpy
 # ndarray = "0.15.3"
-numpy = "0.19"
+
+[features]
+extension-module = ["pyo3/extension-module"]
+# default = ["mimalloc"]

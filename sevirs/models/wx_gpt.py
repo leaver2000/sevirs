@@ -20,7 +20,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 from typing_extensions import Self
 
-from ..generic import BaseConfig
+from ..data.generic import BaseConfig
 
 
 class ModuleProto(Protocol):

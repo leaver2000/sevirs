@@ -36,7 +36,7 @@ from ..constants import (
     IMG_TYPE,
     ImageType,
 )
-from ..generic import AbstractContextManager
+from ..data.generic import AbstractContextManager
 from .catalog import Catalog
 from .h5 import Store
 
@@ -231,6 +231,9 @@ class TimeSeriesGenerator(SequentialGenerator[tuple[str, int], TensorPair]):
 
     def close(self) -> None:
         self.store.close()
+
+
+# from sevirs.utils.sampler import Sampler
 
 
 class TensorLoader(DataLoader[TensorPair], AbstractContextManager, Generic[DatasetT]):
